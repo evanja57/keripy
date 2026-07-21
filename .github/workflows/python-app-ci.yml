@@ -47,7 +47,7 @@ jobs:
             pytest_command: "pytest tests/ --ignore tests/demo/ --ignore test/scripts -n auto"
           - os: windows-latest
             job_name: "test (windows-latest)"
-            pytest_command: "pytest tests/ --ignore tests/demo/ --ignore test/scripts"
+            pytest_command: "pytest tests/ --ignore tests/demo/ --ignore test/scripts -n auto"
     name: ${{ matrix.job_name }}
 
     steps:
