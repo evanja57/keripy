@@ -1,5 +1,4 @@
 import importlib
-import os
 from collections import namedtuple
 import semver
 from ordered_set import OrderedSet as oset
@@ -7,13 +6,85 @@ from ordered_set import OrderedSet as oset
 from hio.help import ogler
 
 from keri import __version__
-from ..kering import (MissingEntryError, DatabaseError,
-                      ConfigurationError, ValidationError,
-                      Vrsn_1_0, Vrsn_2_0)
+from ..help import helping
+from ..kering import (MissingEntryError, ConfigurationError,
+                      ValidationError, Vrsn_1_0)
 
 logger = ogler.getLogger()
 
-# Repeated code from dbing
+
+def fetchTsgs(db, diger, snh=None):
+    """
+    Fetch transferable signature groups for diger from a signature Suber.
+
+    Returns:
+        tsgs (list): Transferable signature group quadruples of
+            (prefixer, seqner, diger, sigers).
+
+    Parameters:
+        db: Signature Suber that supports getTopItemIter.
+        diger (Diger): SAID of the reply SAD whose signatures are requested.
+        snh (str): Optional 32-character hexadecimal sequence-number ceiling.
+    """
+    from ..core import coring
+
+    klases = (coring.Prefixer, coring.Seqner, coring.Diger)
+    args = ("qb64", "snh", "qb64")
+    tsgs = []
+    sigers = []
+    old = None
+    for keys, siger in db.getTopItemIter(keys=(diger.qb64, "")):
+        trituple = keys[1:]
+        if trituple != old:
+            if snh is not None and trituple[1] > snh:
+                break
+            if sigers:
+                tsgs.append((*helping.klasify(sers=old,
+                                              klases=klases,
+                                              args=args),
+                             sigers))
+                sigers = []
+            old = trituple
+        sigers.append(siger)
+    if sigers and old:
+        tsgs.append((*helping.klasify(sers=old,
+                                      klases=klases,
+                                      args=args),
+                     sigers))
+
+    return tsgs
+
+
+def onKey(top, on, *, sep=b'.'):
+    """
+    Returns:
+        onkey (bytes): key formed by joining top key and hex str conversion of
+                       int ordinal number on with sep character.
+
+    Parameters:
+        top (str | bytes): top key prefix to be joined with hex version of on using sep
+        on (int): ordinal number to be converted to 32 hex bytes
+        sep (bytes): separator character for join
+    """
+    if hasattr(top, "encode"):
+        top = top.encode("utf-8")  # convert str to bytes
+    return (b'%s%s%032x' % (top, sep, on))
+
+
+def snKey(pre, sn):
+    """
+    Returns:
+        snkey (bytes): key formed by joining pre and hex str conversion of int
+                       sequence ordinal number sn with sep character b".".
+
+    Parameters:
+        pre (str | bytes): key prefix to be joined with hex version of on using
+                           b"." sep
+        sn (int): sequence number to be converted to 32 hex bytes
+    """
+    return onKey(pre, sn, sep=b'.')
+
+
 def dgKey(pre, dig):
     """
     Returns bytes DB key from concatenation of '.' with qualified Base64 prefix
@@ -676,4 +747,3 @@ class BaserBase:
                 continue  # skip this event
 
             yield serder  # event as Serder
-

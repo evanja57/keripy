@@ -377,6 +377,12 @@ Rolage = namedtuple("Rolage", 'controller witness registrar gateway watcher judg
 Roles = Rolage(controller='controller', witness='witness', registrar='registrar', gateway="gateway",
                watcher='watcher', judge='judge', juror='juror', peer='peer', mailbox="mailbox", agent="agent", indexer="indexer")
 
+OOBI_RE = re.compile('\\A/oobi/(?P<cid>[^/]+)/(?P<role>[^/]+)(?:/(?P<eid>[^/]+))?\\Z',
+                     re.IGNORECASE)
+DOOBI_RE = re.compile('\\A/oobi/(?P<said>[^/]+)\\Z', re.IGNORECASE)
+WOOBI_RE = re.compile('\\A/.well-known/keri/oobi/(?P<cid>[^/]+)\\Z')
+OOBI_AID_HEADER = "KERI-AID"
+
 
 @dataclass(frozen=True)
 class TraitCodex:

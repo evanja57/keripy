@@ -327,6 +327,12 @@ class WebDBer:
             count += 1
         return count
 
+    def clear(self):
+        """Clear all store data and mark each store for persistence."""
+        for subdb in self._stores.values():
+            subdb.items.clear()
+            subdb.dirty = True
+
     @property
     def version(self):
         """Return the database version string, or None if not set.

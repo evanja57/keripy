@@ -10,19 +10,17 @@ from collections import namedtuple
 from urllib import parse
 from urllib.parse import urlparse
 
-import falcon
 from hio.base import doing
 from hio.help import decking, ogler
 
-from .httping import Clienter,CESR_CONTENT_TYPE
 from .organizing import Organizer
 from .. import (Vrsn_1_0, Roles, Schemes, Ilks,
                 ValidationError, UnverifiedReplyError,
                 ConfigurationError)
+from ..kering import OOBI_RE, DOOBI_RE, WOOBI_RE, OOBI_AID_HEADER
 from ..help import nowIso8601, fromIso8601, toIso8601, nowUTC
 from ..core import (Prefixer, Router, Revery, Kevery,
                     Parser, Schemer, SerderKERI)
-from ..end import OOBI_RE, DOOBI_RE, WOOBI_RE, OOBI_AID_HEADER
 from ..peer import exchange
 from ..recording import OobiRecord, WellKnownAuthN
 
@@ -103,6 +101,7 @@ class OobiResource:
                             description: Key state information for current identifiers
                             type: object
         """
+        import falcon
 
         hab = self.hby.habByName(alias)
         if hab is None:
@@ -182,6 +181,8 @@ class OobiResource:
                   description: OOBI resolution to key state successful
 
         """
+        import falcon
+
         body = req.get_media()
 
         if "url" in body:
@@ -292,7 +293,11 @@ class Oobiery:
         if self.rvy is not None:
             self.registerReplyRoutes(self.rvy.rtr)
 
-        self.clienter = clienter or Clienter()
+        if clienter is None:
+            from .httping import Clienter
+
+            clienter = Clienter()
+        self.clienter = clienter
         self.org = Organizer(hby=self.hby)
 
         # Set up a local parser for returned events from OOBI queries.
@@ -502,7 +507,7 @@ class Oobiery:
                     self.hby.db.roobi.put(keys=(url,), val=obr)
 
                 elif response["headers"]["Content-Type"] in (
-                    CESR_CONTENT_TYPE,
+                    "application/cesr",
                     "application/json+cesr",
                     "application/cesr+json",
                 ):  # CESR Stream response to OOBI (canonical + legacy variants)
@@ -653,7 +658,11 @@ class Authenticator:
             clienter (Clienter): DoDoer client provider responsible for managing HTTP client requests
         """
         self.hby = hby
-        self.clienter = clienter if clienter is not None else Clienter()
+        if clienter is None:
+            from .httping import Clienter
+
+            clienter = Clienter()
+        self.clienter = clienter
         self.clients = dict()
         self.doers = [self.clienter, doing.doify(self.authzDo)]
 

@@ -96,13 +96,18 @@ etc.
 """
 from __future__ import annotations
 
+import sys
 from typing import TYPE_CHECKING, Type, Union
 from collections.abc import Iterable
 
 from hio.help import ogler
 
 from ..help import helping
-from .dbing import LMDBer
+
+if "emscripten" in sys.platform:
+    from .webdbing import WebDBer as DBer
+else:
+    from .dbing import LMDBer as DBer
 
 if TYPE_CHECKING:
     from ..core import coring, scheming, serdering, signing
@@ -112,12 +117,12 @@ logger = ogler.getLogger()
 
 class SuberBase():
     """
-    Base class for Sub DBs of LMDBer
+    Base class for Sub DBs of DBer
     Provides common methods for subclasses
     Do not instantiate but use a subclass
 
     Attributes:
-        db (LMDBer): base LMDB db
+        db (DBer): base database
         sdb (lmdb._Database): instance of lmdb named sub db for this Suber
         sep (str): separator for combining keys tuple of strs into key bytes
         verify (bool): True means reverify when ._des from db when applicable
@@ -125,7 +130,7 @@ class SuberBase():
     """
     Sep = '.'  # separator for combining key iterables
 
-    def __init__(self, db: LMDBer, *,
+    def __init__(self, db: DBer, *,
                        subkey: str='docs.',
                        dupsort: bool=False,
                        sep: str=None,
@@ -133,7 +138,7 @@ class SuberBase():
                        **kwa):
         """
         Parameters:
-            db (LMDBer): base db
+            db (DBer): base db
             subkey (str):  LMDB sub database key
             dupsort (bool): True means enable duplicates at each key
                                False (default) means do not enable duplicates at
@@ -393,7 +398,7 @@ class Suber(SuberBase):
     Subclass of SuberBase with no LMDB duplicates (i.e. multiple values at same key).
     """
 
-    def __init__(self, db: LMDBer, *,
+    def __init__(self, db: DBer, *,
                        subkey: str = 'docs.',
                        dupsort: bool=False, **kwa):
         """Initialze instance
@@ -1268,7 +1273,7 @@ class IoSetSuber(SuberBase):
         sdb (lmdb._Database): instance of lmdb named sub db for this Suber
         sep (str): separator for combining keys tuple of strs into key bytes
     """
-    def __init__(self, db: LMDBer, *,
+    def __init__(self, db: DBer, *,
                        subkey: str='docs.',
                        dupsort: bool=False, **kwa):
         """Initialize instance
@@ -2182,7 +2187,7 @@ class DupSuber(SuberBase):
     This is a limitation of dupsort==True sub dbs in LMDB
     """
 
-    def __init__(self, db: Type[LMDBer], *,
+    def __init__(self, db: DBer, *,
                        subkey: str='docs.',
                        dupsort: bool=True,
                        **kwa):

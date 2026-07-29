@@ -11,11 +11,10 @@ from urllib.parse import urlsplit
 from hio.base import doing
 from hio.help import hicting, ogler
 
-from .configing import Configer
-from .keeping import Keeper, Manager
+from .basekeeping import Manager
 
 from ..peer import Exchanger, exchange
-from ..db import Baser, dgKey, fetchTsgs
+from ..db.basebasing import dgKey, fetchTsgs
 from ..help import fromIso8601, toIso8601
 from ..kering import (Vrsn_1_0, Ilks, ClosedError, AuthError,
                 ConfigurationError, ValidationError, MissingEntryError,
@@ -173,23 +172,37 @@ class Habery:
         self.base = base
         self.temp = temp
 
-        self.ks = ks if ks is not None else Keeper(name=self.name,
-                                                           base=self.base,
-                                                           temp=self.temp,
-                                                           reopen=True,
-                                                           clear=clear,
-                                                           headDirPath=headDirPath)
-        self.db = db if db is not None else Baser(name=self.name,
-                                                  base=self.base,
-                                                  temp=self.temp,
-                                                  reopen=True,
-                                                  clear=clear,
-                                                  headDirPath=headDirPath)
-        self.cf = cf if cf is not None else Configer(name=self.name,
-                                                               base=self.base,
-                                                               temp=self.temp,
-                                                               reopen=True,
-                                                               clear=clear)
+        self.ks = ks
+        if self.ks is None:
+            from .keeping import Keeper
+
+            self.ks = Keeper(name=self.name,
+                             base=self.base,
+                             temp=self.temp,
+                             reopen=True,
+                             clear=clear,
+                             headDirPath=headDirPath)
+
+        self.db = db
+        if self.db is None:
+            from ..db import Baser
+
+            self.db = Baser(name=self.name,
+                            base=self.base,
+                            temp=self.temp,
+                            reopen=True,
+                            clear=clear,
+                            headDirPath=headDirPath)
+
+        self.cf = cf
+        if self.cf is None:
+            from .configing import Configer
+
+            self.cf = Configer(name=self.name,
+                               base=self.base,
+                               temp=self.temp,
+                               reopen=True,
+                               clear=clear)
 
         self.mgr = None  # wait to setup until after ks is known to be opened
         self.rtr = Router()

@@ -35,7 +35,7 @@ from .structing import SealEvent, SealLast, StateEstEvent
 from .indexing import Siger
 from .serdering import SerderKERI
 
-from ..db import Baser, dgKey, snKey
+from ..db.basebasing import dgKey, snKey
 from ..recording import (EndpointRecord, EventSourceRecord, KeyStateRecord,
                          LocationRecord, OobiRecord, ObservedRecord,
                          StateEERecord)
@@ -1700,6 +1700,7 @@ class Kever:
                              " and sigers")
 
         if db is None:
+            from ..db import Baser
             db = Baser(reopen=True)  # default name = "main"
         self.db = db
         self.cues = cues
@@ -3850,6 +3851,7 @@ class Kevery:
         """
         self.cues = cues if cues is not None else decking.Deck()  # subclass of deque
         if db is None:
+            from ..db import Baser
             db = Baser(reopen=True)  # default name = "main"
         self.db = db
         self.rvy = rvy

@@ -17,7 +17,7 @@ from ..core import (Counter, Pather, Dater, Diger,
                     Noncer, Sadder, SerderKERI, 
                     NonTransDex, Saids, Codens,
                     verifySigs)
-from ..db import fetchTsgs
+from ..db.basebasing import fetchTsgs
 from ..help import helping
 
 ExchangeMessageTimeWindow = timedelta(seconds=300)
