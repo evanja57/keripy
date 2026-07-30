@@ -33,7 +33,7 @@ from keri.kering import Vrsn_1_0
 from keri.core import state as eventState
 from keri.app import openHby
 from keri.help import datify, dictify
-                            
+
 needskeri = pytest.mark.skipif(subing is None, reason="requires full keri (lmdb)")
 
 
@@ -160,7 +160,8 @@ def test_webdb_baser():
         assert isinstance(baser.sigs, subing.CesrIoSetSuber)
         assert isinstance(baser.wigs, subing.CesrIoSetSuber)
         assert isinstance(baser.wits, subing.CesrIoSetSuber)
-        assert isinstance(baser.ssgs, subing.CesrIoSetSuber)
+        assert isinstance(baser.tsgs, subing.CesrIoSetSuber)
+        assert isinstance(baser.vrcs, subing.CesrIoSetSuber)
         assert isinstance(baser.rpes, subing.CesrIoSetSuber)
         assert isinstance(baser.esigs, subing.CesrIoSetSuber)
         assert isinstance(baser.essrs, subing.CesrIoSetSuber)
@@ -169,7 +170,7 @@ def test_webdb_baser():
         assert isinstance(baser.meids, subing.CesrIoSetSuber)
         assert isinstance(baser.maids, subing.CesrIoSetSuber)
         assert isinstance(baser.kramPMKS, subing.CesrIoSetSuber)
-        
+
         # CesrSuber
         assert isinstance(baser.dtss, subing.CesrSuber)
         assert isinstance(baser.fons, subing.CesrSuber)
@@ -185,11 +186,10 @@ def test_webdb_baser():
         assert isinstance(baser.wwas, subing.CesrSuber)
         assert isinstance(baser.ccigs, subing.CesrSuber)
         assert isinstance(baser.icigs, subing.CesrSuber)
-        
+
         # CatCesrIoSetSuber
         assert isinstance(baser.rcts, subing.CatCesrIoSetSuber)
         assert isinstance(baser.ures, subing.CatCesrIoSetSuber)
-        assert isinstance(baser.vrcs, subing.CatCesrIoSetSuber)
         assert isinstance(baser.vres, subing.CatCesrIoSetSuber)
         assert isinstance(baser.scgs, subing.CatCesrIoSetSuber)
         assert isinstance(baser.gpse, subing.CatCesrIoSetSuber)
@@ -214,10 +214,10 @@ def test_webdb_baser():
         assert isinstance(baser.kels, subing.OnIoSetSuber)
         assert isinstance(baser.pwes, subing.OnIoSetSuber)
         assert isinstance(baser.pdes, subing.OnIoSetSuber)
+        assert isinstance(baser.misfits, subing.OnIoSetSuber)
 
         # IoSetSuber
         assert isinstance(baser.qnfs, subing.IoSetSuber)
-        assert isinstance(baser.misfits, subing.IoSetSuber)
         assert isinstance(baser.delegables, subing.IoSetSuber)
         assert isinstance(baser.epath, subing.IoSetSuber)
         assert isinstance(baser.kramPTDS, subing.IoSetSuber)
@@ -269,7 +269,7 @@ def test_webdb_baser():
         sked = serdering.SerderKERI(raw=skedb, verify=False)
 
         # Basic tests for all SerderSuber instances
-        serderSubers = [    
+        serderSubers = [
             baser.evts,
             baser.rpys,
             baser.epse,
@@ -337,11 +337,12 @@ def test_webdb_baser():
             baser.kels,
             baser.pwes,
             baser.pdes,
+            baser.misfits,
         ]
 
         for sub in onIoSubers:
             assert isinstance(sub, subing.OnIoSetSuber)
-            
+
             # Basic insertion behavior
             pre = 'A'
             sn = 0
@@ -499,7 +500,6 @@ def test_webdb_baser():
         # Basic tests for IoSetSuber instances
         ioSetSubers = [
             baser.qnfs,
-            baser.misfits,
             baser.delegables,
             baser.epath,
             baser.kramPTDS,
@@ -603,7 +603,7 @@ def test_webdb_baser():
         # Tests for CesrIoSetSuber where klas=Siger
         sigerCesrIoSetSuber = [
             "sigs",
-            "ssgs",
+            "tsgs",
             "wigs",
             "esigs",
             "kramPMKS"
@@ -640,12 +640,12 @@ def test_webdb_baser():
             # idempotent put
             assert sub.put(keys=key, vals=[siger0]) == False
             assert [s.qb64b for s in sub.get(keys=key)] == [siger0.qb64b]
-            
+
             # Add second signature
             assert sub.add(keys=key, val=siger1) == True
             assert [s.qb64b for s in sub.get(keys=key)] == [siger0.qb64b, siger1.qb64b]
             assert [val.qb64b for val in sub.getIter(keys=key)] == [siger0.qb64b, siger1.qb64b]
-            
+
             # Deletion
             assert sub.rem(keys=key) == True
             assert sub.get(keys=key) == []
@@ -662,15 +662,15 @@ def test_webdb_baser():
                 assert sub.rem(keys=key, val=val) == True
             assert sub.get(keys=key) == []
 
-            # Put with multiple vals and check ordering 
+            # Put with multiple vals and check ordering
             assert sub.put(keys=key, vals=[siger0]) == True
             assert [s.qb64b for s in sub.get(keys=key)] == [siger0.qb64b]
             assert sub.put(keys=key, vals=[siger1]) == True
             assert [s.qb64b for s in sub.get(keys=key)] == [siger0.qb64b, siger1.qb64b]
-            
+
             # Delete
             assert sub.rem(keys=key) == True
-            
+
             # Check insertion order
             assert sub.put(keys=key, vals=[siger1, siger0]) == True
             assert [s.qb64b for s in sub.get(keys=key)] == [siger1.qb64b, siger0.qb64b]
@@ -680,7 +680,7 @@ def test_webdb_baser():
 
             # more sigs tests
 
-            # Reset to empty 
+            # Reset to empty
             assert sub.rem(keys=key) == True
             assert sub.get(keys=key) == []
 
@@ -735,7 +735,7 @@ def test_webdb_baser():
         # Tests for CesrIoSetSuber where klas=Prefixer
         prefixerCesrIoSetSubers = [
             "wits",
-            "maids",            
+            "maids",
         ]
 
         # Create witness prefixes
@@ -853,7 +853,7 @@ def test_webdb_baser():
             "rpes",
             "chas",
             "reps",
-            "meids", 
+            "meids",
         ]
 
         # Setup
@@ -863,7 +863,7 @@ def test_webdb_baser():
 
         diger0 = coring.Diger(raw=raw0, code=coring.MtrDex.Blake3_256)
         diger1 = coring.Diger(raw=raw1, code=coring.MtrDex.Blake3_256)
-        
+
         for name in digerCesrIoSetSubers:
             sub = getattr(baser, name)
 
@@ -941,7 +941,7 @@ def test_webdb_baser():
             # Reset to empty
             assert sub.rem(keys=key) is True
             assert sub.get(keys=key) == []
-            
+
             # getFullItemIter consistency
             assert sub.put(keys=key, vals=[diger0, diger1]) is True
             items = list(sub.getFullItemIter(keys=key))
@@ -1076,7 +1076,7 @@ def test_webdb_baser():
 
         assert baser.essrs.get(keys=key) == []
 
-        # Persistence across reopen 
+        # Persistence across reopen
         assert baser.essrs.put(keys=key, vals=[texter0, texter1]) is True
         await baser.reopen(storageOpener=backend.open)
 
@@ -1085,14 +1085,14 @@ def test_webdb_baser():
 
 
         # -------- CesrSuber Subdbs tests ---------
-        
+
         # Tests for CesrSuber where klas=Dater
         daterCesrSubers = [
             "dtss",
             "migs",
             "sdts",
-            "epsd", 
-            "kdts", 
+            "epsd",
+            "kdts",
         ]
 
         # Two Dater values
@@ -1315,7 +1315,7 @@ def test_webdb_baser():
             # WebBaser clears CesrSuber on reopen
             assert sub.get(keys=key) is None
 
-        # Tests for .erpy subdb 
+        # Tests for .erpy subdb
 
         # Using the diger values from above
         sdig0 = diger0.qb64b
@@ -1429,7 +1429,7 @@ def test_webdb_baser():
         ]
 
         # Use the cigar values from Tests for CesrIoSetSuber where klas=Siger
-        
+
         for name in cigarCesrSubers:
 
             sub = getattr(baser, name)
@@ -1755,12 +1755,12 @@ def test_webdb_baser():
         # After reopen, dtss should still be empty for key but not key2
         assert baser.dtss.get(keys=key) is None
         assert baser.dtss.get(keys=key2) is None
-        
+
         # Check second key
         assert baser.dtss.rem(keys=key2) is False
         assert baser.dtss.get(keys=key2) is None
 
-        
+
         # Test .aess authorizing event source seal couples
         # test .aess sub db methods
         ssnu1 = b'0AAAAAAAAAAAAAAAAAAAAAAB'
@@ -1802,7 +1802,7 @@ def test_webdb_baser():
         rnumber2, rdiger2 = result
         assert rnumber2.qb64b == number2.qb64b
         assert rdiger2.qb64b == diger2.qb64b
-        
+
         # Remove key and check empty again
         assert baser.aess.rem(keys=(preb, digb)) == True
         assert baser.aess.get(keys=(preb, digb)) == None
@@ -1889,8 +1889,8 @@ def test_webdb_baser():
         assert baser.wigs.cnt(keys=key) == 2
 
         # Test add, duplicate should return False
-        assert baser.wigs.add(keys=key, val=wig0) == False  
-        assert baser.wigs.add(keys=key, val=wig1) == False  
+        assert baser.wigs.add(keys=key, val=wig0) == False
+        assert baser.wigs.add(keys=key, val=wig1) == False
         assert baser.wigs.cnt(keys=key) == 2
 
         # Test getIter, returns just values
@@ -2084,7 +2084,7 @@ def test_webdb_baser():
         assert p.qb64 == pre0.qb64
         assert c.qb64b == cigar0.qb64b
 
-        assert baser.ures.add(key, (diger0, pre0, cigar0)) == False   
+        assert baser.ures.add(key, (diger0, pre0, cigar0)) == False
         assert baser.ures.add(key, (diger1, pre1, cigar1)) == True
 
         result = baser.ures.get(key)
@@ -2183,102 +2183,43 @@ def test_webdb_baser():
         assert baser.ures.get(dKey) == []
 
 
-        # Validator (transferable) Receipts
-        # test .vrcs sub db methods dgkey
-        key = dgKey(preb, digb)
-        assert key == f'{preb.decode("utf-8")}.{digb.decode("utf-8")}'.encode("utf-8")
+        # Validator (transferable) receipts use Sigers under receipt quintuple
+        # keys. Values keep insertion order at each key.
+        rprefixer = coring.Prefixer(
+            qb64="BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
+        rnumber = Number(num=1)
+        rdiger = coring.Diger(ser=b"est1")
 
-        p1 = coring.Prefixer(qb64="BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")  # fake prefix
-        n1 = Number(num=1)
-        e1 = coring.Diger(ser=b"est1")    # digest of est event
-        s1 = Siger(raw=b"\x00" * 64)  # 64‑byte fake signature
+        pre = preb.decode()
+        dig = digb.decode()
+        topkeys = (pre, dig)
+        allkeys = (pre, dig, rprefixer.qb64, rnumber.onkey, rdiger.qb64)
+        rsiger_a = Siger(raw=b"\x00" * 64)
 
-        cesrVal = (p1, n1, e1, s1)
-        cesrVal = [cesrVal]
+        assert baser.vrcs.get(allkeys) == []
+        assert baser.vrcs.cnt(allkeys) == 0
+        assert baser.vrcs.rem(allkeys) is False
+        assert baser.vrcs.put(allkeys, rsiger_a) is True
 
-        assert baser.vrcs.get(key) == []
-        assert baser.vrcs.cnt(key) == 0
-        assert baser.vrcs.rem(key) == False
-
-        assert baser.vrcs.put(key, cesrVal) is True
-
-        stored = baser.vrcs.get(key)
+        stored = baser.vrcs.get(allkeys)
         assert len(stored) == 1
-        sp1, sn1, se1, ss1 = stored[0]
+        assert stored[0].qb64 == rsiger_a.qb64
 
-        assert sp1.qb64 == p1.qb64
-        assert sn1.num == n1.num
-        assert se1.qb64 == e1.qb64
-        assert ss1.raw == s1.raw
+        rsiger_b = Siger(raw=b"\x01" * 64)
+        assert baser.vrcs.add(allkeys, rsiger_b) is True
 
-        assert baser.vrcs.rem(key) == True
+        stored = baser.vrcs.get(allkeys)
+        assert len(stored) == 2
+        assert stored[1].qb64 == rsiger_b.qb64
 
-        # # dup vals are lexocographic
-        # Build several distinct typed CESR quadruples
-        pA = coring.Prefixer(qb64="BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
-        pB = coring.Prefixer(qb64="BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB")
-        pC = coring.Prefixer(qb64="BCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC")
-        pD = coring.Prefixer(qb64="BDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD")
+        results = list(baser.vrcs.getTopItemIter(keys=topkeys))
+        assert len(results) == 2
+        assert results[0][0] == allkeys
+        assert results[0][1].qb64 == rsiger_a.qb64
+        assert results[1][0] == allkeys
+        assert results[1][1].qb64 == rsiger_b.qb64
 
-        nA = Number(num=1)
-        nB = Number(num=2)
-        nC = Number(num=3)
-        nD = Number(num=4)
-
-        eA = coring.Diger(ser=b"estA")
-        eB = coring.Diger(ser=b"estB")
-        eC = coring.Diger(ser=b"estC")
-        eD = coring.Diger(ser=b"estD")
-
-        sA = Siger(raw=b"\x00" * 64)
-        sB = Siger(raw=b"\x01" * 64)
-        sC = Siger(raw=b"\x02" * 64)
-        sD = Siger(raw=b"\x03" * 64)
-
-        quadA = (pA, nA, eA, sA)
-        quadB = (pB, nB, eB, sB)
-        quadC = (pC, nC, eC, sC)
-        quadD = (pD, nD, eD, sD)
-
-        vals = [quadD, quadB, quadC, quadA]   # intentionally out of order
-
-        # Initially empty
-        assert baser.vrcs.get(key) == []
-        assert baser.vrcs.cnt(key) == 0
-
-        # Insert multiple typed tuples
-        assert baser.vrcs.put(key, vals) is True
-
-        # Insertion order is preserved
-        stored = baser.vrcs.get(key)
-        assert len(stored) == len(vals)
-        for (sp, sn, se, ss), (ep, en, ee, es) in zip(stored, vals):
-            assert sp.qb64 == ep.qb64
-            assert sn.num == en.num
-            assert se.qb64 == ee.qb64
-            assert ss.raw == es.raw
-
-        assert baser.vrcs.cnt(key) == 4
-
-        assert baser.vrcs.put(key, [quadA]) == False
-        assert baser.vrcs.put(key, [quadB]) == False   # quadB already present → no change
-        assert baser.vrcs.put(key, [quadD]) == False   # quadD already present → no change
-        assert baser.vrcs.put(key, [quadC]) == False   # quadC already present → no change
-
-        # Iteration returns the same tuples in insertion order
-        itered = list(baser.vrcs.getIter(key))
-        for (sp, sn, se, ss), (ep, en, ee, es) in zip(itered, vals):
-            assert sp.qb64 == ep.qb64
-            assert sn.num == en.num
-            assert se.qb64 == ee.qb64
-            assert ss.raw == es.raw
-
-        # Remove individual tuples
-        for quad in vals:
-            assert baser.vrcs.rem(key, quad) == True
-
-        assert baser.vrcs.get(key) == []
-        assert baser.vrcs.cnt(key) == 0
+        assert baser.vrcs.rem(allkeys) is True
 
          # Unverified Validator (transferable) Receipt Escrows
         # test .vres insertion order dup methods.  dup vals are insertion order
@@ -2323,16 +2264,16 @@ def test_webdb_baser():
         assert baser.kels.get(keys=key) == deserializedVals  # preserved insertion order
         assert baser.kels.cntAll(keys=key) == len(vals) == 4
         assert baser.kels.getLast(keys=key) == deserializedVals[-1]
-        assert baser.kels.put(keys=key, vals=[b'a']) == False   
+        assert baser.kels.put(keys=key, vals=[b'a']) == False
         assert baser.kels.get(keys=key) == deserializedVals  #  no change
-        assert baser.kels.add(keys=key, val=b'a') == False   
+        assert baser.kels.add(keys=key, val=b'a') == False
         assert baser.kels.add(keys=key, val=b'b') == True
         assert baser.kels.get(keys=key) == deserializedVals + ['b']
         assert baser.kels.rem(key) == True
         assert baser.kels.get(keys=key) == []
 
         # Partially Signed Escrow Events
-        # test .pses insertion order methods. 
+        # test .pses insertion order methods.
         pre = b'A'
         sn = 0
         key = snKey(pre, sn)
@@ -2351,10 +2292,10 @@ def test_webdb_baser():
 
         # duplication insertion behavior
         assert baser.pses.put(keys=key, vals=[b'd', b'k']) == True
-        assert baser.pses.put(keys=key, vals=[b'd']) == False  
-        assert baser.pses.put(keys=key, vals=[b'k']) == False  
+        assert baser.pses.put(keys=key, vals=[b'd']) == False
+        assert baser.pses.put(keys=key, vals=[b'k']) == False
         assert baser.pses.put(keys=key, vals=[b'k',b'd',b'k']) == False
-        assert baser.pses.add(keys=key, val=b'd') == False  
+        assert baser.pses.add(keys=key, val=b'd') == False
         assert baser.pses.add(keys=key, val=b'k') == False
         assert baser.pses.get(keys=key) == deserialized_vals + ['d', 'k']
 
@@ -2604,7 +2545,7 @@ def test_webdb_baser():
         assert num.qb64b + diger.qb64b == val1
 
         # Attempt insertion with put
-        assert baser.udes.put(keys=key, val=(num2, diger2)) == False  
+        assert baser.udes.put(keys=key, val=(num2, diger2)) == False
         num, diger = baser.udes.get(keys=key)
         assert num.qb64b + diger.qb64b == val1
 
@@ -2629,9 +2570,9 @@ def test_webdb_baser():
         assert baser.pwes.get(key) == deserializedVals  # preserved insertion order
         assert baser.pwes.cntAll(key) == len(vals) == 4
         assert list(baser.pwes.getLastIter(key))[0] == deserializedVals[-1]
-        assert baser.pwes.put(key, vals=[b'a']) == False   
+        assert baser.pwes.put(key, vals=[b'a']) == False
         assert baser.pwes.get(key) == deserializedVals  #  no change
-        assert baser.pwes.add(keys=key, val=b"a") == False   
+        assert baser.pwes.add(keys=key, val=b"a") == False
         assert baser.pwes.add(keys=key, val=b"b") == True
         assert baser.pwes.get(key) == deserializedVals + ['b']
         assert [val for val in baser.pwes.getIter(key)] == deserializedVals + ['b']
@@ -2705,7 +2646,7 @@ def test_webdb_baser():
         for keys, on, val in items:
             assert baser.pwes.rem(keys=keys, on=on, val=val) == True
 
-        
+
          # Unverified Witness Receipt Escrows
         # test .uwes insertion order methods.
         key = b'A'
@@ -2719,9 +2660,9 @@ def test_webdb_baser():
         assert baser.uwes.get(key, 0) == vals # preserved insertion order
         assert baser.uwes.cnt(key, 0) == len(vals) == 4
         assert baser.uwes.getLast(key, 0) == vals[-1]
-        assert baser.uwes.put(key, 0, vals=[b'a']) == False   
+        assert baser.uwes.put(key, 0, vals=[b'a']) == False
         assert baser.uwes.get(key, 0) == vals  #  no change
-        assert baser.uwes.add(key, 0, b'a') == False   
+        assert baser.uwes.add(key, 0, b'a') == False
         assert baser.uwes.add(key, 0, b'b') == True
         assert baser.uwes.get(key, 0) == [('z',), ('m',), ('x',), ('a',), ('b',)]
         assert [val for key, on, val in baser.uwes.getTopItemIter(key)] == \
@@ -2771,10 +2712,10 @@ def test_webdb_baser():
 
         # duplication insertion behavior
         assert baser.ooes.put(keys=key,vals=[b'd', b'k']) == True
-        assert baser.ooes.put(keys=key,vals=[b'd']) == False  
-        assert baser.ooes.put(keys=key,vals=[b'k']) == False  
+        assert baser.ooes.put(keys=key,vals=[b'd']) == False
+        assert baser.ooes.put(keys=key,vals=[b'k']) == False
         assert baser.ooes.put(keys=key,vals=[b'k',b'd',b'k']) == False
-        assert baser.ooes.add(keys=key, val=b'd') == False  
+        assert baser.ooes.add(keys=key, val=b'd') == False
         assert baser.ooes.add(keys=key, val=b'k') == False
         assert baser.ooes.get(keys=key) == deserialized_vals + ['d', 'k']
 
@@ -2994,9 +2935,9 @@ def test_webdb_baser():
         assert len(baser.dels.get(keys=keys, on=on)) == len(vals) == 4
         result = baser.dels.get(keys=keys, on=on)
         assert result[-1] == vals[-1]
-        assert baser.dels.add(keys=keys, on=on, val='a') == False   
+        assert baser.dels.add(keys=keys, on=on, val='a') == False
         assert baser.dels.get(keys=keys, on=on) == vals  #  no change
-        assert baser.dels.add(keys=keys, on=on, val='a') == False   
+        assert baser.dels.add(keys=keys, on=on, val='a') == False
         assert baser.dels.add(keys=keys, on=on, val='b') == True
         assert baser.dels.get(keys=keys, on=on) == ["z", "m", "x", "a", "b"]
         assert baser.dels.rem(keys=keys, on=on) == True
@@ -3018,7 +2959,7 @@ def test_webdb_baser():
         assert baser.ldes.get(keys=key) == [v.decode("utf-8") for v in vals]
         assert baser.ldes.cnt(keys=key) == len(vals) == 4
         assert baser.ldes.getLast(keys=key) == vals[-1].decode("utf-8")
-        assert baser.ldes.put(keys=key, on=0, vals=[b'a']) == False   
+        assert baser.ldes.put(keys=key, on=0, vals=[b'a']) == False
         assert baser.ldes.get(keys=key) == [v.decode("utf-8") for v in vals] #  no change
         assert baser.ldes.rem(keys=key) == True
         assert baser.ldes.get(keys=key) == []
@@ -3179,7 +3120,7 @@ def test_fetchkeldel():
         preb = 'BWzwEHHzq7K0gzQPYGGwTmuupUhPx5_yZ-Wk1x4ejhcc'.encode("utf-8")
         digb = 'EGAPkzNZMtX-QiVgbRbyAIZGoXvbGv9IPb0foWTZvI_4'.encode("utf-8")
         sn = 3
-        vs = versify(kind=Kinds.json, size=20)
+        vs = versify(pvrsn=Vrsn_1_0, kind=Kinds.json, size=20)
         assert vs == 'KERI10JSON000014_'
 
         ked = dict(vs=vs, pre=preb.decode("utf-8"),
@@ -3213,7 +3154,7 @@ def test_fetchkeldel():
         # test kels getLastIter
         preb = 'B4ejhccWzwEHHzq7K0gzQPYGGwTmuupUhPx5_yZ-Wk1x'.encode("utf-8")
         sn = 0
-        
+
         vals0 = [skedb]
         assert baser.kels.add(keys=preb, on=sn, val=vals0[0]) == True
 
@@ -3227,14 +3168,14 @@ def test_fetchkeldel():
         for val in vals2:
             assert baser.kels.add(keys=preb, on=sn, val=val) == True
         vals = list(baser.kels.getLastIter(keys=preb))
-        # Kels being an IoSetSuber, getLastIter calls getIoSetLastItemIterAll 
+        # Kels being an IoSetSuber, getLastIter calls getIoSetLastItemIterAll
         # which Iterates over every last added ioset entry at every effective key
-        # starting at key greater or equal to key so the values from the previous tests are 
+        # starting at key greater or equal to key so the values from the previous tests are
         # yielded here too.
 
         # Because lexicographically BWzwEHH > B4ejhcc
         # when getLastIter iterates, we get B4ejhcc's values first then BWzweHH
-        lastvals = ['{"vs":"KERI10JSON000014_","pre":"BWzwEHHzq7K0gzQPYGGwTmuupUhPx5_yZ-Wk1x4ejhcc","sn":"3","ilk":"rot","dig":"EGAPkzNZMtX-QiVgbRbyAIZGoXvbGv9IPb0foWTZvI_4"}', 'paul', 'bird', 
+        lastvals = ['{"vs":"KERI10JSON000014_","pre":"BWzwEHHzq7K0gzQPYGGwTmuupUhPx5_yZ-Wk1x4ejhcc","sn":"3","ilk":"rot","dig":"EGAPkzNZMtX-QiVgbRbyAIZGoXvbGv9IPb0foWTZvI_4"}', 'paul', 'bird',
                     '{"vs":"KERI10JSON000014_","pre":"BWzwEHHzq7K0gzQPYGGwTmuupUhPx5_yZ-Wk1x4ejhcc","sn":"3","ilk":"rot","dig":"EGAPkzNZMtX-QiVgbRbyAIZGoXvbGv9IPb0foWTZvI_4"}', 'paul', 'bird']
 
         assert vals == lastvals
@@ -3444,7 +3385,7 @@ def test_trim_all_escrows_during_migration():
     _trimAllEscrows() uses low-level .trim() which bypasses key parsing,
     safely clearing all escrow databases regardless of key format.
     """
-    async def _go(): 
+    async def _go():
 
         backend = FakeStorageBackend()
         db = WebBaser()
@@ -3583,7 +3524,7 @@ def test_statedict():
     """
     Test custom statedict subclass of dict
     """
-    
+
 
     async def _go():
 

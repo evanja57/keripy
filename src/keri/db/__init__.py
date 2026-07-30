@@ -5,9 +5,22 @@ keri.db Package
 """
 import sys
 
-from . import koming, subing, webdbing
-from .basebasing import BaserBase, statedict, onKey, snKey, dgKey, fetchTsgs
-from .webdbing import WebDBer
+IS_PYODIDE = "emscripten" in sys.platform
+
+if IS_PYODIDE:
+    from . import koming, subing, webdbing
+    from .basebasing import BaserBase, statedict, onKey, snKey, dgKey, fetchTsgs
+    from .webdbing import WebDBer
+else:
+    from . import basing, dbing, escrowing, koming, subing, webdbing
+    from .basing import Baser, BaserDoer, openDB, reopenDB, statedict
+    from .dbing import (LMDBer, clearDatabaserDir, openLMDB, onKey,
+                        snKey, fnKey, dgKey, dtKey, splitKey, splitOnKey,
+                        splitKeyDT, fetchTsgs, suffix, unsuffix,
+                        splitKeyFN, SuffixSize, splitSnKey, MaxSuffix)
+    from .webdbing import WebDBer
+    from .escrowing import Broker
+
 from .koming import KomerBase, Komer, IoSetKomer, DupKomer
 from .subing import (SuberBase, Suber, OnSuberBase, OnSuber,
                      B64SuberBase, B64Suber, CesrSuberBase, CesrSuber,
@@ -19,14 +32,3 @@ from .subing import (SuberBase, Suber, OnSuberBase, OnSuber,
                      CatCesrDupSuber, IoDupSuber, B64IoDupSuber,
                      OnIoDupSuber, B64OnIoDupSuber, OnIoSetSuber,
                      B64OnIoSetSuber)
-
-IS_PYODIDE = "emscripten" in sys.platform
-
-if not IS_PYODIDE:
-    from . import basing, dbing, escrowing
-    from .basing import Baser, BaserDoer, openDB, reopenDB
-    from .dbing import (LMDBer, clearDatabaserDir, openLMDB,
-                        fnKey, dtKey, splitKey, splitOnKey,
-                        splitKeyDT, suffix, unsuffix,
-                        splitKeyFN, SuffixSize, splitSnKey, MaxSuffix)
-    from .escrowing import Broker

@@ -5,18 +5,19 @@ tests.vc.walleting module
 """
 from keri.core import (Salter, Counter, Seqner, Diger, Prefixer,
                        Parser, SealEvent, Codens)
-from keri.kering import Vrsn_1_0
+from keri.kering import Vrsn_1_0, Kinds
 from keri.app import openHby
 
 from keri.vc import credential
 from keri.vdr import Verifier, Regery
 
 
+
 def test_wallet(seeder, mockCoringRandomNonce, mockHelpingNowIso8601):
     sidSalt = Salter(raw=b'0123456789abcdef').qb64
 
-    with openHby(name="sid", base="test", salt=sidSalt) as sidHby:
-        sidHab = sidHby.makeHab(name="test")
+    with openHby(name="sid", base="test", salt=sidSalt, version=Vrsn_1_0) as sidHby:
+        sidHab = sidHby.makeHab(name="test", version=Vrsn_1_0, kind=Kinds.json)
         seeder.seedSchema(db=sidHby.db)
         assert sidHab.pre == "EMl4RhuR_JxpiMd1N8DEJEhTxM3Ovvn9Xya8AN-tiUbl"
 
@@ -27,9 +28,9 @@ def test_wallet(seeder, mockCoringRandomNonce, mockHelpingNowIso8601):
 
         sidReg = Regery(hby=sidHby, name="bob", temp=True)
         verifier = Verifier(hby=sidHby, reger=sidReg.reger)
-        issuer = sidReg.makeRegistry(prefix=sidHab.pre, name="bob")
+        issuer = sidReg.makeRegistry(prefix=sidHab.pre, name="bob", version=Vrsn_1_0, kind=Kinds.json)
         rseal = SealEvent(issuer.regk, "0", issuer.regd)._asdict()
-        sidHab.interact(data=[rseal])
+        sidHab.interact(data=[rseal], framed=True, version=Vrsn_1_0, kind=Kinds.json, gvrsn=Vrsn_1_0)
         seqner = Seqner(sn=sidHab.kever.sn)
         issuer.anchorMsg(pre=issuer.regk,
                          regd=issuer.regd,
@@ -41,12 +42,13 @@ def test_wallet(seeder, mockCoringRandomNonce, mockHelpingNowIso8601):
                             recipient=sidHab.pre,
                             schema=schema,
                             data=credSubject,
-                            status=issuer.regk)
+                            status=issuer.regk,
+                            version=Vrsn_1_0, kind=Kinds.json)
         assert creder.said == "EAP1MTFwoSZ7P9Ym9yIqBvihjqZYpilpFpZj2oPTc7vM"
 
         iss = issuer.issue(said=creder.said)
         rseal = SealEvent(iss.pre, "0", iss.said)._asdict()
-        sidHab.interact(data=[rseal])
+        sidHab.interact(data=[rseal], framed=True, version=Vrsn_1_0, kind=Kinds.json, gvrsn=Vrsn_1_0)
         seqner = Seqner(sn=sidHab.kever.sn)
         issuer.anchorMsg(pre=iss.pre,
                          regd=iss.said,

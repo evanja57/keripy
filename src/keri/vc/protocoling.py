@@ -7,7 +7,8 @@ import os
 from collections import namedtuple
 from hio.help import ogler
 
-from ..peer import cloneMessage, exchange
+from ..peer import cloneMessage, specialExchange
+from ..core import exchange
 
 logger = ogler.getLogger()
 
@@ -20,6 +21,22 @@ PreviousRoutes = {
     Ipex.admit: (Ipex.grant,),
     Ipex.spurn: (Ipex.apply, Ipex.offer, Ipex.agree, Ipex.grant),
 }
+
+
+def _event_kwa(hab, version=None, pvrsn=None, gvrsn=None):
+    serder = hab.kever.serder
+
+    if pvrsn is None:
+        pvrsn = serder.pvrsn if version is None else version
+    elif version is not None and version != pvrsn:
+        raise ValueError("version and pvrsn must match when both are provided")
+
+    if version is None:
+        version = pvrsn
+    if gvrsn is None:
+        gvrsn = pvrsn
+
+    return dict(version=version, pvrsn=pvrsn, gvrsn=gvrsn, kind=serder.kind)
 
 
 class IpexHandler:
@@ -130,17 +147,39 @@ class IpexHandler:
         self.notifier.add(attrs=data)
 
 
-def ipexApplyExn(hab, recp, message, schema, attrs):
+def ipexApplyExn(hab, recp, message, schema, attrs, version=None, pvrsn=None,
+                      gvrsn=None, framed=True, nested=False, genusify=False):
     """ Apply for an ACDC
 
-    Parameters:
+    Parameters::
         hab(Hab): identifier environment for issuer of credential
         recp (str): qb64 AID of recipient
         message(str): Human readable message regarding the credential application
         schema (any): schema or its SAID
         attrs (any): attribute field label list
+        version (Versionage | None): explicit KERI protocol version override.
+                        When omitted, defaults to the habitat's established version.
+        pvrsn (Versionage): explicit KERI protocol version
+        gvrsn (Versionage): CESR Genus version for attachment group codes or
+                        nesting group code (useful when serder.gvrsn < 2)
+                        gvrsn = max(svrsn, gvrsn) where svrsn = serder.gvrsn
+                            if serder.gvrsn else serder.pvrsn
+        framed (bool): True means may assume each message plus its attachments
+                                is isolated as frame when parsing so do not need
+                                attachment group when messagizing
+                           False means may not assume eash message plus its attachments
+                                is isolated as frame when parsing so do need
+                                attachment group when messagizing
+        nested (bool): True means messagize for non-top level
+                            This forces non-native serializion to be embedded
+                            in non-native group code
+                       False means messagize for top level of stream.
+                            This allows bare non-native serialization of message
+        genusify (bool): True means prepend genus version code from gvrsn before
+                        serder to override default stream genus version
+                     False means do nothing
 
-    Returns:
+    Returns::
         Serder: credential issuance exn peer to peer message
         bytes: attachments for exn message
 
@@ -151,16 +190,22 @@ def ipexApplyExn(hab, recp, message, schema, attrs):
         a=attrs,
         i=recp
     )
+    kwa = _event_kwa(hab=hab, version=version, pvrsn=pvrsn, gvrsn=gvrsn)
 
-    exn, end = exchange(route="/ipex/apply", payload=data, sender=hab.pre)
-    ims = hab.endorse(serder=exn, last=False, pipelined=False)
+    exn = exchange(sender=hab.pre,
+                   route="/ipex/apply",
+                   attributes=data,
+                   **kwa)
+    ims = hab.endorse(serder=exn, last=False, gvrsn=kwa["gvrsn"], framed=framed,
+                      nested=nested, genusify=genusify)
     del ims[:exn.size]
-    ims.extend(end)
+    #ims.extend(end)
 
     return exn, ims
 
 
-def ipexOfferExn(hab, message, acdc, apply=None):
+def ipexOfferExn(hab, message, acdc, apply=None,  version=None, pvrsn=None,
+                      gvrsn=None, framed=True, nested=False, genusify=False):
     """ Offer a metadata ACDC
 
     Parameters:
@@ -168,6 +213,27 @@ def ipexOfferExn(hab, message, acdc, apply=None):
         message(str): Human readable message regarding the credential offer
         acdc (any): metadata ACDC or its SAID
         apply (Serder): optional IPEX exn apply message that this offer is response to.
+        version (Versionage | None): explicit KERI protocol version override.
+                        When omitted, defaults to the habitat's established version.
+        pvrsn (Versionage): explicit KERI protocol version
+        gvrsn (Versionage): CESR Genus version for attachment group codes or
+                        nesting group code (useful when serder.gvrsn < 2)
+                        gvrsn = max(svrsn, gvrsn) where svrsn = serder.gvrsn
+                            if serder.gvrsn else serder.pvrsn
+        framed (bool): True means may assume each message plus its attachments
+                                is isolated as frame when parsing so do not need
+                                attachment group when messagizing
+                           False means may not assume eash message plus its attachments
+                                is isolated as frame when parsing so do need
+                                attachment group when messagizing
+        nested (bool): True means messagize for non-top level
+                            This forces non-native serializion to be embedded
+                            in non-native group code
+                       False means messagize for top level of stream.
+                            This allows bare non-native serialization of message
+        genusify (bool): True means prepend genus version code from gvrsn before
+                        serder to override default stream genus version
+                     False means do nothing
 
     Returns:
         Serder: credential issuance exn peer to peer message
@@ -184,23 +250,51 @@ def ipexOfferExn(hab, message, acdc, apply=None):
 
     kwa = dict()
     if apply is not None:
-        kwa["dig"] = apply.said
+        kwa['prior'] = apply.said
+    kwa |= _event_kwa(hab=hab, version=version, pvrsn=pvrsn, gvrsn=gvrsn)
 
-    exn, end = exchange(route="/ipex/offer", payload=data, sender=hab.pre, embeds=embeds, **kwa)
-    ims = hab.endorse(serder=exn, last=False, pipelined=False)
+    exn, end = specialExchange(sender=hab.pre,
+                               route="/ipex/offer",
+                               attributes=data,
+                               embeds=embeds,
+                               **kwa)
+    ims = hab.endorse(serder=exn, last=False, gvrsn=kwa["gvrsn"], framed=framed,
+                      nested=nested, genusify=genusify)
     del ims[:exn.size]
     ims.extend(end)
 
     return exn, ims
 
 
-def ipexAgreeExn(hab, message, offer):
+def ipexAgreeExn(hab, message, offer, version=None, pvrsn=None,
+                      gvrsn=None, framed=True, nested=False, genusify=False):
     """ Agree an offer
 
     Parameters:
         hab(Hab): identifier environment for issuer of credential
         message(str): Human readable message regarding the credential agreement
         offer (Serder): IPEX exn offer message that this offer is response to.
+        version (Versionage | None): explicit KERI protocol version override.
+                        When omitted, defaults to the habitat's established version.
+        pvrsn (Versionage): explicit KERI protocol version
+        gvrsn (Versionage): CESR Genus version for attachment group codes or
+                        nesting group code (useful when serder.gvrsn < 2)
+                        gvrsn = max(svrsn, gvrsn) where svrsn = serder.gvrsn
+                            if serder.gvrsn else serder.pvrsn
+        framed (bool): True means may assume each message plus its attachments
+                                is isolated as frame when parsing so do not need
+                                attachment group when messagizing
+                           False means may not assume eash message plus its attachments
+                                is isolated as frame when parsing so do need
+                                attachment group when messagizing
+        nested (bool): True means messagize for non-top level
+                            This forces non-native serializion to be embedded
+                            in non-native group code
+                       False means messagize for top level of stream.
+                            This allows bare non-native serialization of message
+        genusify (bool): True means prepend genus version code from gvrsn before
+                        serder to override default stream genus version
+                     False means do nothing
 
     Returns:
         Serder: credential issuance exn peer to peer message
@@ -211,15 +305,23 @@ def ipexAgreeExn(hab, message, offer):
         m=message
     )
 
-    exn, end = exchange(route="/ipex/agree", payload=data, sender=hab.pre, dig=offer.said)
-    ims = hab.endorse(serder=exn, last=False, pipelined=False)
+    kwa = _event_kwa(hab=hab, version=version, pvrsn=pvrsn, gvrsn=gvrsn)
+    exn = exchange(sender=hab.pre,
+                               prior=offer.said,
+                               route="/ipex/agree",
+                               attributes=data,
+                               **kwa)
+    ims = hab.endorse(serder=exn, last=False, gvrsn=kwa["gvrsn"], framed=framed,
+                      nested=nested, genusify=genusify)
     del ims[:exn.size]
-    ims.extend(end)
+    #ims.extend(end)
 
     return exn, ims
 
 
-def ipexGrantExn(hab, recp, message, acdc, iss=None, anc=None, agree=None, dt=None):
+def ipexGrantExn(hab, recp, message, acdc, iss=None, anc=None, agree=None,
+                      dt=None, version=None, pvrsn=None,
+                      gvrsn=None, framed=True, nested=False, genusify=False):
     """ Disclose an ACDC
 
     Parameters:
@@ -231,6 +333,27 @@ def ipexGrantExn(hab, recp, message, acdc, iss=None, anc=None, agree=None, dt=No
         anc (bytes): serialized anchoring event in the KEL, either ixn or rot
         agree (Serder): optional IPEX exn agree message that this grant is response to.
         dt (str): Iso8601 formatted date string to use for this request
+        version (Versionage | None): explicit KERI protocol version override.
+                        When omitted, defaults to the habitat's established version.
+        pvrsn (Versionage): explicit KERI protocol version
+        gvrsn (Versionage): CESR Genus version for attachment group codes or
+                        nesting group code (useful when serder.gvrsn < 2)
+                        gvrsn = max(svrsn, gvrsn) where svrsn = serder.gvrsn
+                            if serder.gvrsn else serder.pvrsn
+        framed (bool): True means may assume each message plus its attachments
+                                is isolated as frame when parsing so do not need
+                                attachment group when messagizing
+                           False means may not assume eash message plus its attachments
+                                is isolated as frame when parsing so do need
+                                attachment group when messagizing
+        nested (bool): True means messagize for non-top level
+                            This forces non-native serializion to be embedded
+                            in non-native group code
+                       False means messagize for top level of stream.
+                            This allows bare non-native serialization of message
+        genusify (bool): True means prepend genus version code from gvrsn before
+                        serder to override default stream genus version
+                     False means do nothing
 
     Returns:
         Serder: credential issuance exn peer to peer message
@@ -254,17 +377,25 @@ def ipexGrantExn(hab, recp, message, acdc, iss=None, anc=None, agree=None, dt=No
 
     kwa = dict()
     if agree is not None:
-        kwa['dig'] = agree.said
+        kwa['prior'] = agree.said
+    kwa |= _event_kwa(hab=hab, version=version, pvrsn=pvrsn, gvrsn=gvrsn)
 
-    exn, end = exchange(route="/ipex/grant", payload=data, sender=hab.pre, embeds=embeds, date=dt, **kwa)
-    ims = hab.endorse(serder=exn, last=False, pipelined=False)
+    exn, end = specialExchange(sender=hab.pre,
+                               route="/ipex/grant",
+                               stamp=dt,
+                               attributes=data,
+                               embeds=embeds,
+                               **kwa)
+    ims = hab.endorse(serder=exn, last=False, gvrsn=kwa["gvrsn"], framed=framed,
+                      nested=nested, genusify=genusify)
     del ims[:exn.size]
     ims.extend(end)
 
     return exn, ims
 
 
-def ipexAdmitExn(hab, message, grant, dt=None):
+def ipexAdmitExn(hab, message, grant, dt=None, version=None, pvrsn=None,
+                      gvrsn=None, framed=True, nested=False, genusify=False):
     """ Admit a disclosure
 
     Parameters:
@@ -272,6 +403,27 @@ def ipexAdmitExn(hab, message, grant, dt=None):
         message(str): Human readable message regarding the admission
         grant (Serder): IPEX grant exn message serder
         dt (str): timestamp
+        version (Versionage | None): explicit KERI protocol version override.
+                        When omitted, defaults to the habitat's established version.
+        pvrsn (Versionage): explicit KERI protocol version
+        gvrsn (Versionage): CESR Genus version for attachment group codes or
+                        nesting group code (useful when serder.gvrsn < 2)
+                        gvrsn = max(svrsn, gvrsn) where svrsn = serder.gvrsn
+                            if serder.gvrsn else serder.pvrsn
+        framed (bool): True means may assume each message plus its attachments
+                                is isolated as frame when parsing so do not need
+                                attachment group when messagizing
+                           False means may not assume eash message plus its attachments
+                                is isolated as frame when parsing so do need
+                                attachment group when messagizing
+        nested (bool): True means messagize for non-top level
+                            This forces non-native serializion to be embedded
+                            in non-native group code
+                       False means messagize for top level of stream.
+                            This allows bare non-native serialization of message
+        genusify (bool): True means prepend genus version code from gvrsn before
+                        serder to override default stream genus version
+                     False means do nothing
 
     Returns:
         Serder: credential issuance exn peer to peer message
@@ -282,21 +434,50 @@ def ipexAdmitExn(hab, message, grant, dt=None):
         m=message,
     )
 
-    exn, end = exchange(route="/ipex/admit", payload=data, sender=hab.pre, dig=grant.said, date=dt)
-    ims = hab.endorse(serder=exn, last=False, pipelined=False)
+    kwa = _event_kwa(hab=hab, version=version, pvrsn=pvrsn, gvrsn=gvrsn)
+    exn = exchange(sender=hab.pre,
+                               prior=grant.said,
+                               route="/ipex/admit",
+                               stamp=dt,
+                               attributes=data,
+                               **kwa)
+    ims = hab.endorse(serder=exn, last=False, gvrsn=kwa["gvrsn"], framed=framed,
+                      nested=nested, genusify=genusify)
     del ims[:exn.size]
-    ims.extend(end)
+    #ims.extend(end)
 
     return exn, ims
 
 
-def ipexSpurnExn(hab, message, spurned):
+def ipexSpurnExn(hab, message, spurned, version=None, pvrsn=None,
+                      gvrsn=None, framed=True, nested=False, genusify=False):
     """ Reject an application, offer or agreement
 
     Parameters:
         hab(Hab): identifier environment for issuer of credential
         message(str): Human readable message regarding the admission
         spurned (Serder): apply, offer, agree or grant received
+        version (Versionage | None): explicit KERI protocol version override.
+                        When omitted, defaults to the habitat's established version.
+        pvrsn (Versionage): explicit KERI protocol version
+        gvrsn (Versionage): CESR Genus version for attachment group codes or
+                        nesting group code (useful when serder.gvrsn < 2)
+                        gvrsn = max(svrsn, gvrsn) where svrsn = serder.gvrsn
+                            if serder.gvrsn else serder.pvrsn
+        framed (bool): True means may assume each message plus its attachments
+                                is isolated as frame when parsing so do not need
+                                attachment group when messagizing
+                           False means may not assume eash message plus its attachments
+                                is isolated as frame when parsing so do need
+                                attachment group when messagizing
+        nested (bool): True means messagize for non-top level
+                            This forces non-native serializion to be embedded
+                            in non-native group code
+                       False means messagize for top level of stream.
+                            This allows bare non-native serialization of message
+        genusify (bool): True means prepend genus version code from gvrsn before
+                        serder to override default stream genus version
+                     False means do nothing
 
     Returns:
         Serder: credential issuance exn peer to peer message
@@ -307,10 +488,16 @@ def ipexSpurnExn(hab, message, spurned):
         m=message
     )
 
-    exn, end = exchange(route="/ipex/spurn", payload=data, sender=hab.pre, dig=spurned.said)
-    ims = hab.endorse(serder=exn, last=False, pipelined=False)
+    kwa = _event_kwa(hab=hab, version=version, pvrsn=pvrsn, gvrsn=gvrsn)
+    exn = exchange(sender=hab.pre,
+                               prior=spurned.said,
+                               route="/ipex/spurn",
+                               attributes=data,
+                               **kwa)
+    ims = hab.endorse(serder=exn, last=False, gvrsn=kwa["gvrsn"], framed=framed,
+                      nested=nested, genusify=genusify)
     del ims[:exn.size]
-    ims.extend(end)
+    #ims.extend(end)
 
     return exn, ims
 

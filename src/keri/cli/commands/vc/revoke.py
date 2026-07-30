@@ -115,9 +115,9 @@ class RevokeDoer(doing.DoDoer):
             rseal = dict(i=rseal.i, s=rseal.s, d=rseal.d)
 
             if registry.estOnly:
-                anc = hab.rotate(data=[rseal])
+                anc = hab.rotate(data=[rseal], framed=True)
             else:
-                anc = hab.interact(data=[rseal])
+                anc = hab.interact(data=[rseal], framed=True)
 
             aserder = SerderKERI(raw=bytes(anc))
             self.registrar.revoke(creder, rserder, aserder)
@@ -145,7 +145,7 @@ class RevokeDoer(doing.DoDoer):
 
             if len(recps) > 0:
                 msgs = []
-                for msg in self.hby.db.clonePreIter(pre=creder.issuer):
+                for msg in self.hby.db.clonePreIter(pre=creder.israid):
                     serder = SerderKERI(raw=msg)
                     atc = msg[serder.size:]
                     msgs.append((serder, atc))

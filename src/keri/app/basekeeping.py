@@ -24,6 +24,7 @@ Example usage::
     raw = json.dumps(ked, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
 
 """
+import math
 from collections import namedtuple, deque
 from dataclasses import dataclass, asdict, field
 
@@ -31,7 +32,7 @@ import pysodium
 from hio.base import doing
 
 from ..kering import ClosedError, AuthError, DecryptError
-from ..core import (Prefixer, Diger,
+from ..core import (Prefixer, Diger, Tholder,
                     Signer, Salter,
                     Encrypter, Decrypter, Tiers, MtrDex)
 from ..help import nowIso8601
@@ -1096,6 +1097,7 @@ class Manager:
             # if indices provided use indices to compute kidxes
             # otherwise default is all the keys from the .new key list so use
             # .nxt to comput number of keys to generate kidxes for paths
+            paths = []
             # use paths to generate signers
 
         if pubs:
@@ -1212,7 +1214,7 @@ class Manager:
             plain = pysodium.crypto_box_seal_open(qb64, pubkey, prikey)  # qb64b
 
         if plain == qb64:
-            raise ValueError("Unable to decrypt.")
+            raise ValueError(f"Unable to decrypt.")
 
         return plain
 
@@ -1343,6 +1345,9 @@ class Manager:
                 if iridx == 0:
                     old = PubLot()  # defaults ok
                 else:
+                    osigners = csigners
+                    osith = "{:x}".format(max(1, math.ceil(len(osigners) / 2)))
+                    ost = Tholder(sith=osith).sith
                     old=PubLot(pubs=pubs, ridx=ridx, kidx=kidx, dt=dt)
                 ps = PreSit(old=old)  # .new and .nxt are default
                 if not self.ks.sits.pin(pre, val=ps):
@@ -1418,7 +1423,7 @@ class Manager:
                 advancement when advance is True otherwise ignore
 
         """
-        if self.ks.prms.get(pre) is None:
+        if (pp := self.ks.prms.get(pre)) is None:
             raise ValueError("Attempt to replay nonexistent pre={}.".format(pre))
 
         if (ps := self.ks.sits.get(pre)) is None:

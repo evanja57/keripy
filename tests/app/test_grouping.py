@@ -4,12 +4,16 @@ tests.app.grouping module
 
 """
 from contextlib import contextmanager
+from types import SimpleNamespace
 
-from keri.kering import Vrsn_1_0
+from hio.base import doing
+
+from keri.kering import Version, Vrsn_1_0, Kinds
 from keri.app import (Notifier, Counselor, Multiplexor,
                       openHab, multisigInceptExn,
                       multisigRotateExn, multisigInteractExn,
                       multisigRegistryInceptExn)
+from keri.app import grouping
 
 from keri.app.grouping import loadHandlers
 
@@ -20,33 +24,141 @@ from keri.core import (Prefixer, Number, Diger, Kevery,
 from keri.vdr.eventing import incept
 from keri.peer import Exchanger
 
+TEST_VERSION = Vrsn_1_0
+
+
+def test_counselor_explicit_version_propagates_to_default_anchorer_and_delegator_queries(monkeypatch):
+    captures = {}
+
+    class FakeAnchorer(doing.Doer):
+        def __init__(self, hby, proxy=None, auths=None, version=None, kind=None, **kwa):
+            super().__init__(**kwa)
+            captures["anchorer_version"] = version
+            captures["anchorer_kind"] = kind
+
+        def delegation(self, pre, sn=None, proxy=None, auths=None):
+            captures["delegation"] = dict(pre=pre, sn=sn, proxy=proxy, auths=auths)
+
+        def complete(self, prefixer, number, diger=None):
+            return False
+
+    class FakeWitnessInquisitor(doing.Doer):
+        def __init__(self, hby, *args, **kwa):
+            super().__init__(**kwa)
+            self.hby = hby
+
+        def query(self, *args, **kwargs):
+            captures["query_args"] = args
+            captures["query_kwargs"] = kwargs
+
+    class FakeReceiptor(doing.Doer):
+        def __init__(self, hby, *args, **kwa):
+            super().__init__(**kwa)
+            self.hby = hby
+            self.msgs = []
+            self.gets = []
+            self.cues = []
+
+    class FakeTopItemStore:
+        def __init__(self, items=None):
+            self.items = list(items or [])
+            self.removed = []
+            self.added = []
+
+        def getTopItemIter(self):
+            return iter(self.items)
+
+        def rem(self, keys):
+            self.removed.append(keys)
+            self.items = []
+
+        def add(self, keys, val):
+            self.added.append((keys, val))
+
+    class FakeLastStore:
+        def __init__(self, value):
+            self.value = value
+
+        def getLast(self, keys, on=None):
+            return self.value
+
+    class FakeSigsStore:
+        def __init__(self, sigers):
+            self.sigers = sigers
+
+        def get(self, keys):
+            return self.sigers
+
+    monkeypatch.setattr(grouping, "Anchorer", FakeAnchorer)
+    monkeypatch.setattr(grouping, "WitnessInquisitor", FakeWitnessInquisitor)
+    monkeypatch.setattr(grouping, "Receiptor", FakeReceiptor)
+
+    pre = "EGroupPrefix"
+    delpre = "EDelegatorPrefix"
+    number = Number(num=1)
+    diger = SimpleNamespace(qb64="EGroupEventDigest")
+
+    gpse = FakeTopItemStore([((pre,), (number, diger))])
+    gdee = FakeTopItemStore()
+    fake_db = SimpleNamespace(gpse=gpse,
+                              gdee=gdee,
+                              kels=FakeLastStore("abc"),
+                              sigs=FakeSigsStore([SimpleNamespace(index=1)]))
+    fake_ghab = SimpleNamespace(
+        pre=pre,
+        kever=SimpleNamespace(
+            verfers=[SimpleNamespace(qb64="DFirst"), SimpleNamespace(qb64="DSecond")],
+            delegated=True,
+            ilk=grouping.Ilks.dip,
+            delpre=delpre,
+        ),
+        mhab=SimpleNamespace(pre="ELocalMember",
+                             kever=SimpleNamespace(verfers=[SimpleNamespace(qb64="DFirst")])),
+    )
+    fake_hby = SimpleNamespace(db=fake_db, habs={pre: fake_ghab})
+
+    counselor = Counselor(hby=fake_hby, version=Vrsn_1_0, kind=Kinds.json)
+    counselor.processPartialSignedEscrow()
+
+    assert captures["anchorer_version"] == Vrsn_1_0
+    assert captures["anchorer_kind"] == Kinds.json
+    assert captures["query_kwargs"] == dict(
+        src="ELocalMember",
+        pre=delpre,
+        anchor=dict(i=pre, s=number.snh, d=diger.qb64),
+        version=Vrsn_1_0,
+        gvrsn=Vrsn_1_0,
+        kind=Kinds.json,
+    )
+
 
 def test_counselor():
     salt = b'0123456789abcdef'
     prefix = "counselor"
-    with openHab(name=f"{prefix}_1", salt=salt, transferable=True) as (hby1, hab1), \
-            openHab(name=f"{prefix}_2", salt=salt, transferable=True) as (hby2, hab2), \
-            openHab(name=f"{prefix}_3", salt=salt, transferable=True) as (hby3, hab3):
-        counselor = Counselor(hby=hby1)
+    with openHab(name=f"{prefix}_1", salt=salt, transferable=True, version=Vrsn_1_0, kind=Kinds.json) as (hby1, hab1), \
+            openHab(name=f"{prefix}_2", salt=salt, transferable=True, version=Vrsn_1_0, kind=Kinds.json) as (hby2, hab2), \
+            openHab(name=f"{prefix}_3", salt=salt, transferable=True, version=Vrsn_1_0, kind=Kinds.json) as (hby3, hab3):
+        counselor = Counselor(hby=hby1, version=TEST_VERSION, kind=Kinds.json)
 
         # Keverys so we can process each other's inception messages.
         kev1 = Kevery(db=hab1.db, lax=True, local=False)
         kev2 = Kevery(db=hab2.db, lax=True, local=False)
         kev3 = Kevery(db=hab3.db, lax=True, local=False)
 
-        icp1 = hab1.makeOwnEvent(sn=0)
-        Parser(version=Vrsn_1_0).parse(ims=bytearray(icp1), kvy=kev2, local=True)
-        Parser(version=Vrsn_1_0).parse(ims=bytearray(icp1), kvy=kev3, local=True)
-        icp2 = hab2.makeOwnEvent(sn=0)
-        Parser(version=Vrsn_1_0).parse(ims=bytearray(icp2), kvy=kev1, local=True)
-        Parser(version=Vrsn_1_0).parse(ims=bytearray(icp2), kvy=kev3, local=True)
-        icp3 = hab3.makeOwnEvent(sn=0)
-        Parser(version=Vrsn_1_0).parse(ims=bytearray(icp3), kvy=kev1, local=True)
-        Parser(version=Vrsn_1_0).parse(ims=bytearray(icp3), kvy=kev2, local=True)
+        icp1 = hab1.msgOwnEvent(sn=0, framed=True, gvrsn=TEST_VERSION)
+        Parser(version=TEST_VERSION).parse(ims=bytearray(icp1), kvy=kev2, local=True)
+        Parser(version=TEST_VERSION).parse(ims=bytearray(icp1), kvy=kev3, local=True)
+        icp2 = hab2.msgOwnEvent(sn=0, framed=True, gvrsn=TEST_VERSION)
+        Parser(version=TEST_VERSION).parse(ims=bytearray(icp2), kvy=kev1, local=True)
+        Parser(version=TEST_VERSION).parse(ims=bytearray(icp2), kvy=kev3, local=True)
+        icp3 = hab3.msgOwnEvent(sn=0, framed=True, gvrsn=TEST_VERSION)
+        Parser(version=TEST_VERSION).parse(ims=bytearray(icp3), kvy=kev1, local=True)
+        Parser(version=TEST_VERSION).parse(ims=bytearray(icp3), kvy=kev2, local=True)
 
         smids = [hab1.pre, hab2.pre, hab3.pre]
         rmids = None  # need to fixe this
-        inits = dict(isith='["1/2", "1/2", "1/2"]', nsith='["1/2", "1/2", "1/2"]', toad=0, wits=[])
+        inits = dict(isith='["1/2", "1/2", "1/2"]', nsith='["1/2", "1/2", "1/2"]',
+                     toad=0, wits=[], version=Vrsn_1_0, kind=Kinds.json)
 
         # Create group hab with init params
         ghab = hby1.makeGroupHab(group=f"{prefix}_group1", mhab=hab1,
@@ -65,7 +177,7 @@ def test_counselor():
         # Sith 2 so create second signature to get past the first escrow
         ghab2 = hby2.makeGroupHab(group=f"{prefix}_group2", mhab=hab2,
                                   smids=smids, rmids=rmids, **inits)
-        evt = ghab2.makeOwnInception(allowPartiallySigned=True)
+        evt = ghab2.msgOwnInception(allowPartiallySigned=True, framed=True, gvrsn=TEST_VERSION)
         assert evt == (b'{"v":"KERI10JSON000207_","t":"icp","d":"ENuUR3YvSR2-dFoN1zBN2p8W'
                        b'9BvsySnrY6g2vDS1EVAS","i":"ENuUR3YvSR2-dFoN1zBN2p8W9BvsySnrY6g2v'
                        b'DS1EVAS","s":"0","kt":["1/2","1/2","1/2"],"k":["DEXdkHRR2Nspj5cz'
@@ -77,7 +189,7 @@ def test_counselor():
                        b'"a":[]}-AABBBBkMCMWP1Z2MMd6dBPlogRd1k6mv1joiHIyb8mXvp0H4kY0DHIPM'
                        b'9O6udZ1Bbyf3klr4uGnLs07qcCcnKGI6GsH')
 
-        Parser(version=Vrsn_1_0).parse(ims=bytearray(evt), kvy=kev1, local=True)  # parse second signed group inception
+        Parser(version=TEST_VERSION).parse(ims=bytearray(evt), kvy=kev1, local=True)  # parse second signed group inception
         kev1.processEscrows()  # Run escrows for Kevery1 to process all sigs together
 
         counselor.processEscrows()
@@ -86,13 +198,14 @@ def test_counselor():
         assert counselor.complete(prefixer=prefixer, number=number, diger=diger)
 
         # First Partial Rotation
-        hab1.rotate()
-        hab2.rotate()
+        hab1.rotate(framed=True, gvrsn=TEST_VERSION, version=Vrsn_1_0, kind=Kinds.json)
+        hab2.rotate(framed=True, gvrsn=TEST_VERSION, version=Vrsn_1_0, kind=Kinds.json)
         merfers = [hab1.kever.verfers[0], hab2.kever.verfers[0]]
         migers = [hab1.kever.ndigers[0], hab2.kever.ndigers[0]]
         prefixer = Prefixer(qb64=ghab.pre)
         number = Number(sn=ghab.kever.sn + 1)
-        rot = ghab.rotate(isith="2", nsith="2", toad=0, cuts=list(), adds=list(), verfers=merfers, digers=migers)
+        rot = ghab.rotate(isith="2", nsith="2", toad=0, cuts=list(), adds=list(),
+                          verfers=merfers, digers=migers, framed=True, gvrsn=TEST_VERSION, version=Vrsn_1_0, kind=Kinds.json)
         rserder = SerderKERI(raw=rot)
 
         counselor.start(ghab=ghab, prefixer=prefixer, number=number, diger=Diger(qb64=rserder.said))
@@ -111,7 +224,7 @@ def test_counselor():
                               b'CoeLmfUzvE3mnxmcU2m_nyKfSDfpxV4"],"bt":"0","br":[],"ba":[],"a":[]}')
 
         sigers = hab2.mgr.sign(srdr.raw, verfers=hab2.kever.verfers, indexed=True, indices=[1], ondices=[1])
-        msg = messagize(serder=srdr, sigers=sigers)
+        msg = messagize(serder=srdr, sigers=sigers, framed=True, gvrsn=TEST_VERSION)
         assert msg == (b'{"v":"KERI10JSON0001be_","t":"rot","d":"EFWaDXMVIhIMpsXMOcnXhU0t'
                        b'kJfD_rPULkQzphoM_EVb","i":"ENuUR3YvSR2-dFoN1zBN2p8W9BvsySnrY6g2v'
                        b'DS1EVAS","s":"1","p":"ENuUR3YvSR2-dFoN1zBN2p8W9BvsySnrY6g2vDS1EV'
@@ -124,7 +237,7 @@ def test_counselor():
 
         # Create group rotation from second participant
 
-        Parser(version=Vrsn_1_0).parse(ims=bytearray(msg), kvy=kev1, local=True)  # parse second signed group inception
+        Parser(version=TEST_VERSION).parse(ims=bytearray(msg), kvy=kev1, local=True)  # parse second signed group inception
         kev1.processEscrows()  # Run escrows for Kevery1 so he processes all sigs together
 
         counselor.processEscrows()
@@ -139,13 +252,14 @@ def test_counselor():
 
         # Second Partial Rotation
 
-        hab1.rotate()
-        hab2.rotate()
+        hab1.rotate(framed=True, gvrsn=TEST_VERSION, version=Vrsn_1_0, kind=Kinds.json)
+        hab2.rotate(framed=True, gvrsn=TEST_VERSION, version=Vrsn_1_0, kind=Kinds.json)
         merfers = [hab1.kever.verfers[0], hab2.kever.verfers[0]]
         migers = [hab1.kever.ndigers[0], hab2.kever.ndigers[0], hab3.kever.ndigers[0]]
         prefixer = Prefixer(qb64=ghab.pre)
         number = Number(sn=ghab.kever.sn + 1)
-        rot = ghab.rotate(isith="2", nsith="2", toad=0, cuts=list(), adds=list(), verfers=merfers, digers=migers)
+        rot = ghab.rotate(isith="2", nsith="2", toad=0, cuts=list(), adds=list(),
+                          verfers=merfers, digers=migers, framed=True, gvrsn=TEST_VERSION, version=Vrsn_1_0, kind=Kinds.json)
         rserder = SerderKERI(raw=rot)
 
         counselor.start(ghab=ghab, prefixer=prefixer, number=number, diger=Diger(qb64=rserder.said))
@@ -165,7 +279,7 @@ def test_counselor():
                               b'Un"],"bt":"0","br":[],"ba":[],"a":[]}')
 
         sigers = hab2.mgr.sign(srdr.raw, verfers=hab2.kever.verfers, indexed=True, indices=[1])
-        msg = messagize(serder=srdr, sigers=sigers)
+        msg = messagize(serder=srdr, sigers=sigers, framed=True, gvrsn=TEST_VERSION)
         assert msg == (b'{"v":"KERI10JSON0001ed_","t":"rot","d":"EAFmW50FmBfJXp4sPnYBp51L'
                        b'-aT9RESXYh8jylx2dEGc","i":"ENuUR3YvSR2-dFoN1zBN2p8W9BvsySnrY6g2v'
                        b'DS1EVAS","s":"2","p":"EFWaDXMVIhIMpsXMOcnXhU0tkJfD_rPULkQzphoM_E'
@@ -179,7 +293,7 @@ def test_counselor():
 
         # Create group rotation from second participant
 
-        Parser(version=Vrsn_1_0).parse(ims=bytearray(msg), kvy=kev1, local=True)  # parse second signed group inception
+        Parser(version=TEST_VERSION).parse(ims=bytearray(msg), kvy=kev1, local=True)  # parse second signed group inception
         kev1.processEscrows()  # Run escrows for Kevery1 so he processes all sigs together
 
         counselor.processEscrows()
@@ -193,13 +307,14 @@ def test_counselor():
         assert [diger.qb64 for diger in ghab.kever.ndigers] == ndigs
 
         # Third Partial Rotation with Recovery
-        hab1.rotate()
-        hab3.rotate()
+        hab1.rotate(framed=True, gvrsn=TEST_VERSION, version=Vrsn_1_0, kind=Kinds.json)
+        hab3.rotate(framed=True, gvrsn=TEST_VERSION, version=Vrsn_1_0, kind=Kinds.json)
         merfers = [hab1.kever.verfers[0], hab3.kever.verfers[0]]
         migers = [hab1.kever.ndigers[0], hab3.kever.ndigers[0]]
         prefixer = Prefixer(qb64=ghab.pre)
         number = Number(sn=ghab.kever.sn + 1)
-        rot = ghab.rotate(isith="2", nsith="2", toad=0, cuts=list(), adds=list(), verfers=merfers, digers=migers)
+        rot = ghab.rotate(isith="2", nsith="2", toad=0, cuts=list(), adds=list(),
+                          verfers=merfers, digers=migers, framed=True, gvrsn=TEST_VERSION, version=Vrsn_1_0, kind=Kinds.json)
         rserder = SerderKERI(raw=rot)
 
         counselor.start(ghab=ghab, prefixer=prefixer, number=number, diger=Diger(qb64=rserder.said))
@@ -219,7 +334,7 @@ def test_counselor():
 
         serder = evt
         sigers = hab3.mgr.sign(serder.raw, verfers=hab3.kever.verfers, indexed=True, indices=[1], ondices=[2])
-        msg = messagize(serder=serder, sigers=sigers)
+        msg = messagize(serder=serder, sigers=sigers, framed=True, gvrsn=TEST_VERSION)
         assert msg == (b'{"v":"KERI10JSON0001be_","t":"rot","d":"EEQVk2x7-t_fnYNoOzeZppvI'
                        b'KkEbVRDDVf1oxGj_hnXw","i":"ENuUR3YvSR2-dFoN1zBN2p8W9BvsySnrY6g2v'
                        b'DS1EVAS","s":"3","p":"EAFmW50FmBfJXp4sPnYBp51L-aT9RESXYh8jylx2dE'
@@ -232,7 +347,7 @@ def test_counselor():
 
         # Create group rotation from second participant
 
-        Parser(version=Vrsn_1_0).parse(ims=bytearray(msg), kvy=kev1, local=True)  # parse second signed group inception
+        Parser(version=TEST_VERSION).parse(ims=bytearray(msg), kvy=kev1, local=True)  # parse second signed group inception
         kev1.processEscrows()  # Run escrows for Kevery1 so he processes all sigs together
 
         counselor.processEscrows()
@@ -242,13 +357,13 @@ def test_counselor():
 def test_the_seven():
     salt = b'0123456789abcdef'
     prefix = "counselor"
-    with openHab(name=f"{prefix}_1", salt=salt, transferable=True) as (hby1, hab1), \
-            openHab(name=f"{prefix}_2", salt=salt, transferable=True) as (hby2, hab2), \
-            openHab(name=f"{prefix}_3", salt=salt, transferable=True) as (hby3, hab3), \
-            openHab(name=f"{prefix}_4", salt=salt, transferable=True) as (hby4, hab4), \
-            openHab(name=f"{prefix}_5", salt=salt, transferable=True) as (hby5, hab5), \
-            openHab(name=f"{prefix}_6", salt=salt, transferable=True) as (hby6, hab6), \
-            openHab(name=f"{prefix}_7", salt=salt, transferable=True) as (hby7, hab7):
+    with openHab(name=f"{prefix}_1", salt=salt, transferable=True, version=Vrsn_1_0, kind=Kinds.json) as (hby1, hab1), \
+            openHab(name=f"{prefix}_2", salt=salt, transferable=True, version=Vrsn_1_0, kind=Kinds.json) as (hby2, hab2), \
+            openHab(name=f"{prefix}_3", salt=salt, transferable=True, version=Vrsn_1_0, kind=Kinds.json) as (hby3, hab3), \
+            openHab(name=f"{prefix}_4", salt=salt, transferable=True, version=Vrsn_1_0, kind=Kinds.json) as (hby4, hab4), \
+            openHab(name=f"{prefix}_5", salt=salt, transferable=True, version=Vrsn_1_0, kind=Kinds.json) as (hby5, hab5), \
+            openHab(name=f"{prefix}_6", salt=salt, transferable=True, version=Vrsn_1_0, kind=Kinds.json) as (hby6, hab6), \
+            openHab(name=f"{prefix}_7", salt=salt, transferable=True, version=Vrsn_1_0, kind=Kinds.json) as (hby7, hab7):
         counselor = Counselor(hby=hby1)
 
         # All the Habs, this will come in handy later
@@ -262,25 +377,27 @@ def test_the_seven():
         kev7 = Kevery(db=hab7.db)
         kevs = [kev1, kev2, kev3, kev4, kev5, kev6, kev7]
 
-        icps = [hab1.makeOwnEvent(sn=0),
-                hab2.makeOwnEvent(sn=0),
-                hab3.makeOwnEvent(sn=0),
-                hab4.makeOwnEvent(sn=0),
-                hab5.makeOwnEvent(sn=0),
-                hab6.makeOwnEvent(sn=0),
-                hab7.makeOwnEvent(sn=0)
-                ]
+        icps = \
+        [
+            hab1.msgOwnEvent(sn=0, framed=True, gvrsn=TEST_VERSION),
+            hab2.msgOwnEvent(sn=0, framed=True, gvrsn=TEST_VERSION),
+            hab3.msgOwnEvent(sn=0, framed=True, gvrsn=TEST_VERSION),
+            hab4.msgOwnEvent(sn=0, framed=True, gvrsn=TEST_VERSION),
+            hab5.msgOwnEvent(sn=0, framed=True, gvrsn=TEST_VERSION),
+            hab6.msgOwnEvent(sn=0, framed=True, gvrsn=TEST_VERSION),
+            hab7.msgOwnEvent(sn=0, framed=True, gvrsn=TEST_VERSION)
+        ]
 
         # Introduce everyone to each other by parsing each others ICP event into our keverys
         for (kev, icp) in [(kev, icp) for (kdx, kev) in enumerate(kevs) for (idx, icp) in enumerate(icps) if
                            kdx != idx]:
-            Parser(version=Vrsn_1_0).parse(ims=bytearray(icp), kvy=kev, local=True)
+            Parser(version=TEST_VERSION).parse(ims=bytearray(icp), kvy=kev, local=True)
 
         smids = [hab1.pre, hab2.pre, hab3.pre, hab4.pre, hab5.pre, hab6.pre, hab7.pre]
         rmids = None  # need to fixe this
         inits = dict(isith='["1/3", "1/3", "1/3", "1/3", "1/3", "1/3", "1/3"]',
                      nsith='["1/3", "1/3", "1/3", "1/3", "1/3", "1/3", "1/3"]',
-                     toad=0, wits=[])
+                     toad=0, wits=[], version=Vrsn_1_0, kind=Kinds.json)
 
         # Create group hab with init params
         ghab = hby1.makeGroupHab(group=f"{prefix}_group1", mhab=hab1,
@@ -311,57 +428,57 @@ def test_the_seven():
         # Get participation from everyone on inception
         ghab2 = hby2.makeGroupHab(group=f"{prefix}_group2", mhab=hab2,
                                   smids=smids, rmids=rmids, **inits)
-        evt = ghab2.makeOwnInception(allowPartiallySigned=True)
+        evt = ghab2.msgOwnInception(allowPartiallySigned=True, framed=True, gvrsn=TEST_VERSION)
         serd = SerderKERI(raw=bytearray(evt))
         assert evt[serd.size:] == (b'-AABBBAD108k4sWtYRv8jQaRbzX6kDebjdzFNVCh3N9cOAJqXV5IzmKdi60Cr0Eu'
                                    b'MaACskw0FCi73V2VX8BgFlxO8VIK')
         assert serd.raw == raw
-        Parser(version=Vrsn_1_0).parse(ims=bytearray(evt), kvy=kev1, local=True)  # parse second signed group inception
+        Parser(version=TEST_VERSION).parse(ims=bytearray(evt), kvy=kev1, local=True)  # parse second signed group inception
 
         ghab3 = hby3.makeGroupHab(group=f"{prefix}_group3", mhab=hab3,
                                   smids=smids, rmids=rmids, **inits)
-        evt = ghab3.makeOwnInception(allowPartiallySigned=True)
+        evt = ghab3.msgOwnInception(allowPartiallySigned=True, framed=True, gvrsn=TEST_VERSION)
         serd = SerderKERI(raw=bytearray(evt))
         assert evt[serd.size:] == (b'-AABBCD6V2UkAovhY07MrJUNb-ICddDoyLde9i0FWclxfs7jes01YUEihfgbGERF'
                                    b'dKDR4kSr4WF3AskrZOPvMuXipAgP')
         assert serd.raw == raw
-        Parser(version=Vrsn_1_0).parse(ims=bytearray(evt), kvy=kev1, local=True)  # parse second signed group inception
+        Parser(version=TEST_VERSION).parse(ims=bytearray(evt), kvy=kev1, local=True)  # parse second signed group inception
 
         ghab4 = hby4.makeGroupHab(group=f"{prefix}_group4", mhab=hab4,
                                   smids=smids, rmids=rmids, **inits)
-        evt = ghab4.makeOwnInception(allowPartiallySigned=True)
+        evt = ghab4.msgOwnInception(allowPartiallySigned=True, framed=True, gvrsn=TEST_VERSION)
         serd = SerderKERI(raw=bytearray(evt))
         assert evt[serd.size:] == (b'-AABBDBCZuZSFWy0tFshGny1pTR47GphDljd0SShmGRpUSpBX_BeHB1tdIObizaA'
                                    b'4GMoOcZ2sOWIe6muJPF_RaoKedYE')
         assert serd.raw == raw
-        Parser(version=Vrsn_1_0).parse(ims=bytearray(evt), kvy=kev1, local=True)  # parse second signed group inception
+        Parser(version=TEST_VERSION).parse(ims=bytearray(evt), kvy=kev1, local=True)  # parse second signed group inception
 
         ghab5 = hby5.makeGroupHab(group=f"{prefix}_group5", mhab=hab5,
                                   smids=smids, rmids=rmids, **inits)
-        evt = ghab5.makeOwnInception(allowPartiallySigned=True)
+        evt = ghab5.msgOwnInception(allowPartiallySigned=True, framed=True, gvrsn=TEST_VERSION)
         serd = SerderKERI(raw=bytearray(evt))
         assert evt[serd.size:] == (b'-AABBEBsR6_hPId3H8fFG8EfevQVji8MsLAC72MjkkRxJp3h9v1vyFS1hAGGGxno'
                                    b'F5xSHOnpBpPwjMJwOCurAa3VrNAD')
         assert serd.raw == raw
-        Parser(version=Vrsn_1_0).parse(ims=bytearray(evt), kvy=kev1, local=True)  # parse second signed group inception
+        Parser(version=TEST_VERSION).parse(ims=bytearray(evt), kvy=kev1, local=True)  # parse second signed group inception
 
         ghab6 = hby6.makeGroupHab(group=f"{prefix}_group6", mhab=hab6,
                                   smids=smids, rmids=rmids, **inits)
-        evt = ghab6.makeOwnInception(allowPartiallySigned=True)
+        evt = ghab6.msgOwnInception(allowPartiallySigned=True, framed=True, gvrsn=TEST_VERSION)
         serd = SerderKERI(raw=bytearray(evt))
         assert evt[serd.size:] == (b'-AABBFCi5hK6Ax4aBNsdoUkh7Q_CcSWJfpwkeF68aCO34J3BDN7k483lOxiyj6pl'
                                    b'8TQIQ7VJLBkoRscUMi_mls9jbpcD')
         assert serd.raw == raw
-        Parser(version=Vrsn_1_0).parse(ims=bytearray(evt), kvy=kev1, local=True)  # parse second signed group inception
+        Parser(version=TEST_VERSION).parse(ims=bytearray(evt), kvy=kev1, local=True)  # parse second signed group inception
 
         ghab7 = hby7.makeGroupHab(group=f"{prefix}_group7", mhab=hab7,
                                   smids=smids, rmids=rmids, **inits)
-        evt = ghab7.makeOwnInception(allowPartiallySigned=True)
+        evt = ghab7.msgOwnInception(allowPartiallySigned=True, framed=True, gvrsn=TEST_VERSION)
         serd = SerderKERI(raw=bytearray(evt))
         assert evt[serd.size:] == (b'-AABBGCtPvRj00vEfT5Po6eH50DWfBWwAcQgvBaJ7LlYT7kQswkl_r-K9Lsxi5tm'
                                    b'Pvsb2xFtcMJkFf-BxamGhFo9OOcD')
         assert serd.raw == raw
-        Parser(version=Vrsn_1_0).parse(ims=bytearray(evt), kvy=kev1, local=True)  # parse second signed group inception
+        Parser(version=TEST_VERSION).parse(ims=bytearray(evt), kvy=kev1, local=True)  # parse second signed group inception
 
         kev1.processEscrows()  # Run escrows for Kevery1 to process all sigs together
 
@@ -371,16 +488,17 @@ def test_the_seven():
         assert counselor.complete(prefixer=prefixer, number=number, diger=diger)
 
         # First Partial Rotation
-        hab1.rotate()
-        hab2.rotate()
-        hab3.rotate()
+        hab1.rotate(framed=True, version=Vrsn_1_0, kind=Kinds.json, gvrsn=TEST_VERSION)
+        hab2.rotate(framed=True, version=Vrsn_1_0, kind=Kinds.json, gvrsn=TEST_VERSION)
+        hab3.rotate(framed=True, version=Vrsn_1_0, kind=Kinds.json, gvrsn=TEST_VERSION)
         merfers = [hab1.kever.verfers[0], hab2.kever.verfers[0], hab3.kever.verfers[0]]
         migers = [hab1.kever.ndigers[0], hab2.kever.ndigers[0], hab3.kever.ndigers[0], hab4.kever.ndigers[0],
                   hab5.kever.ndigers[0], hab6.kever.ndigers[0], hab7.kever.ndigers[0]]
         prefixer = Prefixer(qb64=ghab.pre)
         number = Number(sn=ghab.kever.sn + 1)
         rot = ghab.rotate(isith='["1/3", "1/3", "1/3"]', nsith='["1/3", "1/3", "1/3", "1/3", "1/3", "1/3", "1/3"]',
-                          toad=0, cuts=list(), adds=list(), verfers=merfers, digers=migers)
+                          toad=0, cuts=list(), adds=list(), verfers=merfers,
+                          digers=migers, framed=True, version=Vrsn_1_0, kind=Kinds.json, gvrsn=TEST_VERSION)
         rserder = SerderKERI(raw=rot)
 
         counselor.start(ghab=ghab, prefixer=prefixer, number=number, diger=Diger(qb64=rserder.said))
@@ -407,18 +525,18 @@ def test_the_seven():
 
         # Grab the group ROT event, sign with Hab2 and parse into Kev1
         sigers = hab2.mgr.sign(srdr.raw, verfers=hab2.kever.verfers, indexed=True, indices=[1])
-        msg = messagize(serder=srdr, sigers=sigers)
+        msg = messagize(serder=srdr, sigers=sigers, framed=True, gvrsn=TEST_VERSION)
         assert msg[srdr.size:] == (b'-AABABAzvHN7yC3581dp9DxFXrKuXGP_62r_pzNMXL20T6RaPQASXvnBn6sKJ78z'
                                      b'KM9o499Zaz76j940nBoMT-yb9i8N')
-        Parser(version=Vrsn_1_0).parse(ims=bytearray(msg), kvy=kev1, local=True)  # parse second signed group inception
+        Parser(version=TEST_VERSION).parse(ims=bytearray(msg), kvy=kev1, local=True)  # parse second signed group inception
 
         # Now sign the group ROT with Hab3 and parse into Kev1.  This should commit the event
         sigers = hab3.mgr.sign(srdr.raw, verfers=hab3.kever.verfers, indexed=True, indices=[2])
-        msg = messagize(serder=srdr, sigers=sigers)
+        msg = messagize(serder=srdr, sigers=sigers, framed=True, gvrsn=TEST_VERSION)
         assert msg[srdr.size:] == (b'-AABACB6z6LrzBAgpnrCopgiGxuki3sE-KAfY8t_rFq-2dIcQxRF4iCqCYNPKM9D'
                                      b'NbZbA1WDaQ72enSsR2UWMftX2kYD')
 
-        Parser(version=Vrsn_1_0).parse(ims=bytearray(msg), kvy=kev1, local=True)  # parse second signed group inception
+        Parser(version=TEST_VERSION).parse(ims=bytearray(msg), kvy=kev1, local=True)  # parse second signed group inception
         kev1.processEscrows()  # Run escrows for Kevery1 so he processes all sigs together
 
         counselor.processEscrows()  # Get the rest of the way through counselor.
@@ -433,16 +551,17 @@ def test_the_seven():
         assert [diger.qb64 for diger in ghab.kever.ndigers] == ndigs
 
         # Second Partial Rotation
-        hab1.rotate()
-        hab2.rotate()
-        hab3.rotate()
+        hab1.rotate(framed=True, version=Vrsn_1_0, kind=Kinds.json, gvrsn=TEST_VERSION)
+        hab2.rotate(framed=True, version=Vrsn_1_0, kind=Kinds.json, gvrsn=TEST_VERSION)
+        hab3.rotate(framed=True, version=Vrsn_1_0, kind=Kinds.json, gvrsn=TEST_VERSION)
         merfers = [hab1.kever.verfers[0], hab2.kever.verfers[0], hab3.kever.verfers[0]]
         migers = [hab1.kever.ndigers[0], hab2.kever.ndigers[0], hab3.kever.ndigers[0], hab4.kever.ndigers[0],
                   hab5.kever.ndigers[0], hab6.kever.ndigers[0], hab7.kever.ndigers[0]]
         prefixer = Prefixer(qb64=ghab.pre)
         number = Number(sn=ghab.kever.sn + 1)
         rot = ghab.rotate(isith='["1/3", "1/3", "1/3"]', nsith='["1/3", "1/3", "1/3", "1/3", "1/3", "1/3", "1/3"]',
-                          toad=0, cuts=list(), adds=list(), verfers=merfers, digers=migers)
+                          toad=0, cuts=list(), adds=list(), verfers=merfers,
+                          digers=migers, framed=True, version=Vrsn_1_0, kind=Kinds.json, gvrsn=TEST_VERSION)
         rserder = SerderKERI(raw=rot)
 
         counselor.start(ghab=ghab, prefixer=prefixer, number=number, diger=Diger(qb64=rserder.said))
@@ -470,18 +589,18 @@ def test_the_seven():
 
         # Grab the group ROT event, sign with Hab2 and parse into Kev1
         sigers = hab2.mgr.sign(srdr.raw, verfers=hab2.kever.verfers, indexed=True, indices=[1])
-        msg = messagize(serder=srdr, sigers=sigers)
+        msg = messagize(serder=srdr, sigers=sigers, framed=True, gvrsn=TEST_VERSION)
         assert msg[srdr.size:] == (b'-AABABC4sYnDXCpO87BMXO21ofqHZKntPSdEXlBPlq1H8NOHD3KV-GHGWrXyrElK'
                                      b'BkQNBbNr9_yg-nSnBq7N9rAxEFcK')
-        Parser(version=Vrsn_1_0).parse(ims=bytearray(msg), kvy=kev1, local=True)  # parse second signed group inception
+        Parser(version=TEST_VERSION).parse(ims=bytearray(msg), kvy=kev1, local=True)  # parse second signed group inception
 
         # Now sign the group ROT with Hab3 and parse into Kev1.  This should commit the event
         sigers = hab3.mgr.sign(srdr.raw, verfers=hab3.kever.verfers, indexed=True, indices=[2])
-        msg = messagize(serder=srdr, sigers=sigers)
+        msg = messagize(serder=srdr, sigers=sigers, framed=True, gvrsn=TEST_VERSION)
         assert msg[srdr.size:] == (b'-AABACAXyUueUfXC-ccUxBZTgnyHTXOy1wUYgQrhlk8FMJGQPiaOOdAzhaW71JeF'
                                      b'0By8Se-tKKuPP1xG41DblgXIwNkE')
 
-        Parser(version=Vrsn_1_0).parse(ims=bytearray(msg), kvy=kev1, local=True)  # parse second signed group inception
+        Parser(version=TEST_VERSION).parse(ims=bytearray(msg), kvy=kev1, local=True)  # parse second signed group inception
         kev1.processEscrows()  # Run escrows for Kevery1 so he processes all sigs together
 
         counselor.processEscrows()  # Get the rest of the way through counselor.
@@ -498,10 +617,13 @@ def test_the_seven():
 
         # Third Partial Rotation with Recovery (using 4 members not involved in previous rotations)
         # First we have to do a replay of all multisig AID and member AID events and get members 4 - 7 up to date
-        msgs = [hab1.replay(), hab2.replay(), hab3.replay(), ghab.replay()]
+        msgs = [hab1.replay(version=TEST_VERSION),
+                hab2.replay(version=TEST_VERSION),
+                hab3.replay(version=TEST_VERSION),
+                ghab.replay(version=TEST_VERSION)]
         kevs = [kev4, kev5, kev6, kev7]
         for (kev, msg) in [(kev, msg) for kev in kevs for msg in msgs]:
-            Parser(version=Vrsn_1_0).parse(ims=bytearray(msg), kvy=kev, local=True)
+            Parser(version=TEST_VERSION).parse(ims=bytearray(msg), kvy=kev, local=True)
 
         assert kev4.kevers[ghab.pre] is not None
         assert kev5.kevers[ghab.pre] is not None
@@ -511,15 +633,16 @@ def test_the_seven():
         # Create a new counselor with #4
         counselor4 = Counselor(hby=hby4)
 
-        hab4.rotate()
-        hab5.rotate()
-        hab6.rotate()
+        hab4.rotate(framed=True, version=Vrsn_1_0, kind=Kinds.json, gvrsn=TEST_VERSION)
+        hab5.rotate(framed=True, version=Vrsn_1_0, kind=Kinds.json, gvrsn=TEST_VERSION)
+        hab6.rotate(framed=True, version=Vrsn_1_0, kind=Kinds.json, gvrsn=TEST_VERSION)
         merfers = [hab4.kever.verfers[0], hab5.kever.verfers[0], hab6.kever.verfers[0]]
         migers = [hab4.kever.ndigers[0], hab5.kever.ndigers[0], hab6.kever.ndigers[0]]
         prefixer = Prefixer(qb64=ghab.pre)
         number = Number(sn=ghab.kever.sn + 1)
         rot = ghab4.rotate(isith='["1/3", "1/3", "1/3"]', nsith='["1/3", "1/3", "1/3"]',
-                           toad=0, cuts=list(), adds=list(), verfers=merfers, digers=migers)
+                           toad=0, cuts=list(), adds=list(), verfers=merfers,
+                           digers=migers, framed=True, version=Vrsn_1_0, kind=Kinds.json, gvrsn=TEST_VERSION)
         rserder = SerderKERI(raw=rot)
 
         counselor4.start(ghab=ghab4, prefixer=prefixer, number=number, diger=Diger(qb64=rserder.said))
@@ -543,18 +666,18 @@ def test_the_seven():
 
         # Grab the group ROT event, sign with Hab5 and parse into Kev4
         sigers = hab5.mgr.sign(srdr.raw, verfers=hab5.kever.verfers, indexed=True, indices=[1], ondices=[4])
-        msg = messagize(serder=srdr, sigers=sigers)
+        msg = messagize(serder=srdr, sigers=sigers, framed=True, gvrsn=TEST_VERSION)
         assert msg[srdr.size:] == (b'-AAB2AABAEDSs99oM-KOhJ8q3H8lqGqPE3EvZxCHvCjZFvWHLzhqm91YlcskGqvK'
                                      b'8DwCg9dj8wRZP54ienzD52EIKvJWWh4J')
-        Parser(version=Vrsn_1_0).parse(ims=bytearray(msg), kvy=kev4, local=True)  # parse second signed group inception
+        Parser(version=TEST_VERSION).parse(ims=bytearray(msg), kvy=kev4, local=True)  # parse second signed group inception
 
         # Now sign the group ROT with Hab6 and parse into Kev4.  This should commit the event
         sigers = hab6.mgr.sign(srdr.raw, verfers=hab6.kever.verfers, indexed=True, indices=[2], ondices=[5])
-        msg = messagize(serder=srdr, sigers=sigers)
+        msg = messagize(serder=srdr, sigers=sigers, framed=True, gvrsn=TEST_VERSION)
         assert msg[srdr.size:] == (b'-AAB2AACAFBNVTM0Gw4rSd-S5HQ_KpmBfDedi7XNvB24ijMjQaekIfKlcdguPS8p'
                                      b'ax9ht7EE3SiTj9fSO_3f4SVUfJMPmHIK')
 
-        Parser(version=Vrsn_1_0).parse(ims=bytearray(msg), kvy=kev4, local=True)  # parse second signed group inception
+        Parser(version=TEST_VERSION).parse(ims=bytearray(msg), kvy=kev4, local=True)  # parse second signed group inception
         kev4.processEscrows()  # Run escrows for Kevery1 so he processes all sigs together
 
         counselor4.processEscrows()  # Get the rest of the way through counselor.
@@ -570,23 +693,23 @@ def test_the_seven():
 
 @contextmanager
 def openMultiSig(prefix="test", salt=b'0123456789abcdef', temp=True, **kwa):
-    with openHab(name=f"{prefix}_1", salt=salt, transferable=True, temp=temp) as (hby1, hab1), \
-            openHab(name=f"{prefix}_2", salt=salt, transferable=True, temp=temp) as (hby2, hab2), \
-            openHab(name=f"{prefix}_3", salt=salt, transferable=True, temp=temp) as (hby3, hab3):
+    with openHab(name=f"{prefix}_1", salt=salt, transferable=True, temp=temp, version=Vrsn_1_0, kind=Kinds.json) as (hby1, hab1), \
+            openHab(name=f"{prefix}_2", salt=salt, transferable=True, temp=temp, version=Vrsn_1_0, kind=Kinds.json) as (hby2, hab2), \
+            openHab(name=f"{prefix}_3", salt=salt, transferable=True, temp=temp, version=Vrsn_1_0, kind=Kinds.json) as (hby3, hab3):
         # Keverys so we can process each other's inception messages.
         kev1 = Kevery(db=hab1.db, lax=True, local=False)
         kev2 = Kevery(db=hab2.db, lax=True, local=False)
         kev3 = Kevery(db=hab3.db, lax=True, local=False)
 
-        icp1 = hab1.makeOwnEvent(sn=0)
-        Parser(version=Vrsn_1_0).parse(ims=bytearray(icp1), kvy=kev2, local=True)
-        Parser(version=Vrsn_1_0).parse(ims=bytearray(icp1), kvy=kev3, local=True)
-        icp2 = hab2.makeOwnEvent(sn=0)
-        Parser(version=Vrsn_1_0).parse(ims=bytearray(icp2), kvy=kev1, local=True)
-        Parser(version=Vrsn_1_0).parse(ims=bytearray(icp2), kvy=kev3, local=True)
-        icp3 = hab3.makeOwnEvent(sn=0)
-        Parser(version=Vrsn_1_0).parse(ims=bytearray(icp3), kvy=kev1, local=True)
-        Parser(version=Vrsn_1_0).parse(ims=bytearray(icp3), kvy=kev2, local=True)
+        icp1 = hab1.msgOwnEvent(sn=0, framed=True, gvrsn=TEST_VERSION)
+        Parser(version=TEST_VERSION).parse(ims=bytearray(icp1), kvy=kev2, local=True)
+        Parser(version=TEST_VERSION).parse(ims=bytearray(icp1), kvy=kev3, local=True)
+        icp2 = hab2.msgOwnEvent(sn=0, framed=True, gvrsn=TEST_VERSION)
+        Parser(version=TEST_VERSION).parse(ims=bytearray(icp2), kvy=kev1, local=True)
+        Parser(version=TEST_VERSION).parse(ims=bytearray(icp2), kvy=kev3, local=True)
+        icp3 = hab3.msgOwnEvent(sn=0, framed=True, gvrsn=TEST_VERSION)
+        Parser(version=TEST_VERSION).parse(ims=bytearray(icp3), kvy=kev1, local=True)
+        Parser(version=TEST_VERSION).parse(ims=bytearray(icp3), kvy=kev2, local=True)
 
         smids = [hab1.pre, hab2.pre, hab3.pre]
         rmids = None
@@ -595,7 +718,8 @@ def openMultiSig(prefix="test", salt=b'0123456789abcdef', temp=True, **kwa):
             toad=0,
             wits=[],
             isith='3',
-            nsith='3'
+            nsith='3',
+            version=Vrsn_1_0, kind=Kinds.json
         )
 
         ghab1 = hby1.makeGroupHab(group=f"{prefix}_group1", mhab=hab1,
@@ -613,12 +737,12 @@ def openMultiSig(prefix="test", salt=b'0123456789abcdef', temp=True, **kwa):
 
         evt = bytearray(eserder.raw)
         evt.extend(Counter(Codens.ControllerIdxSigs,
-                                count=3, version=Vrsn_1_0).qb64b)  # attach cnt
+                                count=3, version=TEST_VERSION).qb64b)  # attach cnt
         evt.extend(sigers)
 
-        Parser(version=Vrsn_1_0).parse(ims=bytearray(evt), kvy=kev3, local=True)
-        Parser(version=Vrsn_1_0).parse(ims=bytearray(evt), kvy=kev2, local=True)
-        Parser(version=Vrsn_1_0).parse(ims=bytearray(evt), kvy=kev1, local=True)
+        Parser(version=TEST_VERSION).parse(ims=bytearray(evt), kvy=kev3, local=True)
+        Parser(version=TEST_VERSION).parse(ims=bytearray(evt), kvy=kev2, local=True)
+        Parser(version=TEST_VERSION).parse(ims=bytearray(evt), kvy=kev1, local=True)
 
         assert ghab1.pre in kev1.kevers
         assert ghab1.pre in kev2.kevers
@@ -628,21 +752,59 @@ def openMultiSig(prefix="test", salt=b'0123456789abcdef', temp=True, **kwa):
 
 
 def test_multisig_incept(mockHelpingNowUTC):
-    with openHab(name="test", temp=True, salt=b'0123456789abcdef') as (hby, hab):
+    with openHab(name="test", temp=True, salt=b'0123456789abcdef', version=Vrsn_1_0, kind=Kinds.json) as (hby, hab):
         aids = [hab.pre, "EfrzbTSWjccrTdNRsFUUfwaJ2dpYxu9_5jI2PJ-TRri0"]
         exn, atc = multisigInceptExn(hab=hab, smids=aids, rmids=aids,
-                                              icp=hab.makeOwnEvent(sn=hab.kever.sn))
+                                     icp=hab.msgOwnEvent(sn=hab.kever.sn,
+                                                         framed=True, gvrsn=TEST_VERSION),
+                                     version=TEST_VERSION,
+                                     kind=Kinds.json)
 
         assert exn.ked["r"] == '/multisig/icp'
         assert exn.saidb == b'EJ6Kl50IBicAa8zND_3wMSQ5itw555V7NKid9y1SKobe'
-        assert atc == (b'-FABEIaGMMWJFPmtXznY1IIiKDIrg-vIyge6mBl2QV8dDjI30AAAAAAAAAAAAAAA'
-                       b'AAAAAAAAEIaGMMWJFPmtXznY1IIiKDIrg-vIyge6mBl2QV8dDjI3-AABAACL4cf7'
-                       b'LxzKJgaJbb7wWHLuTfj3wManDV0SW7euFNZDiEhD1kUiP3_wtOIfqB_ZsEceE4oI'
-                       b'gOOZwFROyrcf9ScB-LAa5AACAA-e-icp-AABAACihaKoLnoXxRoxGbFfOy67YSh6'
-                       b'UxtgjT2oxupnLDz2FlhevGJKTMObbdex9f0Hqob6uTavSJvsXf5RzitskkkC')
+        assert atc == (b'-FABEIaGMMWJFPmtXznY1IIiKDIrg-vIyge6mBl2QV8dDjI30AAAAAAAAAAA'
+                       b'AAAAAAAAAAAAEIaGMMWJFPmtXznY1IIiKDIrg-vIyge6mBl2QV8dDjI3-AAB'
+                       b'AACL4cf7LxzKJgaJbb7wWHLuTfj3wManDV0SW7euFNZDiEhD1kUiP3_wtOIf'
+                       b'qB_ZsEceE4oIgOOZwFROyrcf9ScB-LAa5AACAA-e-icp-AABAACihaKoLnoX'
+                       b'xRoxGbFfOy67YSh6UxtgjT2oxupnLDz2FlhevGJKTMObbdex9f0Hqob6uTav'
+                       b'SJvsXf5RzitskkkC')
         data = exn.ked["a"]
         assert data["smids"] == aids
         assert "icp" in exn.ked['e']
+
+
+def test_multisig_incept_default_framing_uses_default_version_with_legacy_special_exn(mockHelpingNowUTC, monkeypatch):
+    with openHab(name="test", temp=True, salt=b'0123456789abcdef', version=Vrsn_1_0, kind=Kinds.json) as (_, hab):
+        aids = [hab.pre, "EfrzbTSWjccrTdNRsFUUfwaJ2dpYxu9_5jI2PJ-TRri0"]
+        icp = hab.msgOwnEvent(sn=hab.kever.sn, framed=True, gvrsn=TEST_VERSION)
+        special_calls = {}
+        endorse_calls = {}
+        original_special_exchange = grouping.specialExchange
+        original_endorse = hab.endorse
+
+        def capture_special_exchange(*, sender, route, modifiers, attributes, embeds, version, kind):
+            special_calls["version"] = version
+            special_calls["kind"] = kind
+            return original_special_exchange(sender=sender,
+                                             route=route,
+                                             modifiers=modifiers,
+                                             attributes=attributes,
+                                             embeds=embeds,
+                                             version=version,
+                                             kind=kind)
+
+        def capture_endorse(*args, **kwargs):
+            endorse_calls["gvrsn"] = kwargs.get("gvrsn")
+            return original_endorse(*args, **kwargs)
+
+        monkeypatch.setattr(grouping, "specialExchange", capture_special_exchange)
+        monkeypatch.setattr(hab, "endorse", capture_endorse)
+
+        multisigInceptExn(hab=hab, smids=aids, rmids=aids, icp=icp)
+
+        assert special_calls["version"] == Vrsn_1_0
+        assert special_calls["kind"] == Kinds.json
+        assert endorse_calls["gvrsn"] == Version
 
 
 def test_multisig_rotate(mockHelpingNowUTC):
@@ -655,15 +817,15 @@ def test_multisig_rotate(mockHelpingNowUTC):
                b'"1/3","1/3"],"n":["EGX_K2uTEU6NOXfNo0VfhYLMrqADYHOoNk7WtT1SXOo2","EFl4us5uR0'
                b'hCiYcW7YyOaSAo-7zp8x1uBVU2E_tmhEwj","EMyxeTiM_cH5IHUI6nummgHMeW-_1oKw7rvqlDd'
                b'gha9v"],"bt":"0","br":[],"ba":[],"a":[]}')
-        exn, atc = multisigRotateExn(ghab=ghab1, smids=ghab1.smids, rmids=ghab1.rmids, rot=rot)
+        exn, atc = multisigRotateExn(ghab=ghab1, smids=ghab1.smids, rmids=ghab1.rmids, rot=rot,
+                                     version=TEST_VERSION, kind=Kinds.json)
 
         assert exn.ked["r"] == '/multisig/rot'
         assert exn.saidb == b'EL4LeEHvTiOxs1UDNTv5qWxCYVYojdpEMfKI62O-UsPm'
-        assert atc == (b'-FABEH__mobl7NDyyQCB1DoLK-OPSueraPtZAlWEjfOYkaba0AAAAAAAAAAAAAAA'
-                       b'AAAAAAAAEH__mobl7NDyyQCB1DoLK-OPSueraPtZAlWEjfOYkaba-AABAACH_qI1'
-                       b'JebS_iehZT6XmvxylpOy2hS2BjO41e4mNmscSBdun2MyGk82SC-rHfQfvDJZlRRw'
-                       b'NhLw-pKKKxql8wUF')
-
+        assert atc == (b'-FABEH__mobl7NDyyQCB1DoLK-OPSueraPtZAlWEjfOYkaba0AAAAAAAAAAA'
+                       b'AAAAAAAAAAAAEH__mobl7NDyyQCB1DoLK-OPSueraPtZAlWEjfOYkaba-AAB'
+                       b'AACH_qI1JebS_iehZT6XmvxylpOy2hS2BjO41e4mNmscSBdun2MyGk82SC-r'
+                       b'HfQfvDJZlRRwNhLw-pKKKxql8wUF')
         data = exn.ked["a"]
         assert data["smids"] == ghab1.smids
         assert data["gid"] == ghab1.pre
@@ -672,17 +834,20 @@ def test_multisig_rotate(mockHelpingNowUTC):
 
 def test_multisig_interact(mockHelpingNowUTC):
     with openMultiSig(prefix="test") as ((hby1, ghab1), (_, _), (_, _)):
-        ixn = ghab1.mhab.interact()
+        ixn = ghab1.mhab.interact(framed=True, version=Vrsn_1_0, kind=Kinds.json, gvrsn=TEST_VERSION)
         exn, atc = multisigInteractExn(ghab=ghab1, aids=ghab1.smids,
-                                                ixn=ixn)
+                                       ixn=ixn,
+                                       version=TEST_VERSION,
+                                       kind=Kinds.json)
 
         assert exn.ked["r"] == '/multisig/ixn'
         assert exn.saidb == b'EDF8o6SK-s2jxUVnlGtqAVtXTF-wyZ26c0dUsS5p766q'
-        assert atc == (b'-FABEH__mobl7NDyyQCB1DoLK-OPSueraPtZAlWEjfOYkaba0AAAAAAAAAAAAAAA'
-                       b'AAAAAAAAEH__mobl7NDyyQCB1DoLK-OPSueraPtZAlWEjfOYkaba-AABAABFfU5s'
-                       b'o86inNogCPN7Ko8WXvkMKeiUKPScQ3FYrVmngNpVmW8xmhOTfixuWFlLcQPjEf3b'
-                       b'RQhvNvx7azcI_vwB-LAa5AACAA-e-ixn-AABAABG58m7gibjdrQ8YU-8WQ8A70nc'
-                       b'tYekYr3xdfZ5WgDQOD0bb9pI7SuuaJvzfAQisLAYQnztA82pAo1Skhf1vQwD')
+        assert atc == (b'-FABEH__mobl7NDyyQCB1DoLK-OPSueraPtZAlWEjfOYkaba0AAAAAAAAAAA'
+                       b'AAAAAAAAAAAAEH__mobl7NDyyQCB1DoLK-OPSueraPtZAlWEjfOYkaba-AAB'
+                       b'AABFfU5so86inNogCPN7Ko8WXvkMKeiUKPScQ3FYrVmngNpVmW8xmhOTfixu'
+                       b'WFlLcQPjEf3bRQhvNvx7azcI_vwB-LAa5AACAA-e-ixn-AABAABG58m7gibj'
+                       b'drQ8YU-8WQ8A70nctYekYr3xdfZ5WgDQOD0bb9pI7SuuaJvzfAQisLAYQnzt'
+                       b'A82pAo1Skhf1vQwD')
         data = exn.ked["a"]
         assert data["smids"] == ghab1.smids
         assert data["gid"] == ghab1.pre
@@ -691,18 +856,22 @@ def test_multisig_interact(mockHelpingNowUTC):
 
 def test_multisig_registry_incept(mockHelpingNowUTC, mockCoringRandomNonce):
     with openMultiSig(prefix="test") as ((hby1, ghab1), (_, _), (_, _)):
-        vcp = incept(ghab1.pre)
-        ixn = ghab1.mhab.interact(data=[dict(i=vcp.pre, s="0", d=vcp.said)])
+        vcp = incept(ghab1.pre, version=Vrsn_1_0, kind=Kinds.json)
+        ixn = ghab1.mhab.interact(data=[dict(i=vcp.pre, s="0", d=vcp.said)],
+                                  framed=True, version=Vrsn_1_0, kind=Kinds.json, gvrsn=TEST_VERSION)
         exn, atc = multisigRegistryInceptExn(ghab=ghab1, vcp=vcp.raw, anc=ixn,
-                                                      usage="Issue vLEI Credentials")
+                                             usage="Issue vLEI Credentials",
+                                             version=TEST_VERSION,
+                                             kind=Kinds.json)
 
         assert exn.ked["r"] == '/multisig/vcp'
         assert exn.saidb == b'EBum6f9SwkUUjQTl_vDplKs7L-shzQT6fS5jJlzdP9PP'
-        assert atc == (b'-FABEDEf72ZZ9mhpT1Xz-_YkXl7cg93sjZUFLIsxaFNTbXQO0AAAAAAAAAAAAAAA'
-                       b'AAAAAAAAEDEf72ZZ9mhpT1Xz-_YkXl7cg93sjZUFLIsxaFNTbXQO-AABAAAS5k5D'
-                       b'9jH0rbS6jCtZIPyTJRS2l8TZBnChwG8try3kZUJuiAPoBLo7UuhFYmZlpTZ6MfSg'
-                       b'cDS7XNg0ETj6L3QF-LAa5AACAA-e-anc-AABAABXlwkzbp_tC4MEbx1Uyny1o7dB'
-                       b'GHrYjU3u90Mhv2GtrIGG-7va1jZnlXef2R_LM4TRN8_XjmpLv1skcJaM90UB')
+        assert atc == (b'-FABEDEf72ZZ9mhpT1Xz-_YkXl7cg93sjZUFLIsxaFNTbXQO0AAAAAAAAAAA'
+                       b'AAAAAAAAAAAAEDEf72ZZ9mhpT1Xz-_YkXl7cg93sjZUFLIsxaFNTbXQO-AAB'
+                       b'AAAS5k5D9jH0rbS6jCtZIPyTJRS2l8TZBnChwG8try3kZUJuiAPoBLo7UuhF'
+                       b'YmZlpTZ6MfSgcDS7XNg0ETj6L3QF-LAa5AACAA-e-anc-AABAABXlwkzbp_t'
+                       b'C4MEbx1Uyny1o7dBGHrYjU3u90Mhv2GtrIGG-7va1jZnlXef2R_LM4TRN8_X'
+                       b'jmpLv1skcJaM90UB')
         data = exn.ked["a"]
         assert data == {'gid': 'EEVG5a8c88Fg9vH-6zQP6gJdc4LxVbUTRydx-JhpDcob',
                         'usage': 'Issue vLEI Credentials'}
@@ -711,10 +880,13 @@ def test_multisig_registry_incept(mockHelpingNowUTC, mockCoringRandomNonce):
 
 
 def test_multisig_incept_handler(mockHelpingNowUTC):
-    with openHab(name="test0", temp=True, salt=b'0123456789abcdef') as (hby, hab):
+    with openHab(name="test0", temp=True, salt=b'0123456789abcdef', version=Vrsn_1_0, kind=Kinds.json) as (hby, hab):
         aids = [hab.pre, "EfrzbTSWjccrTdNRsFUUfwaJ2dpYxu9_5jI2PJ-TRri0"]
         exn, atc = multisigInceptExn(hab=hab, smids=aids, rmids=aids,
-                                              icp=hab.makeOwnEvent(sn=hab.kever.sn))
+                                     icp=hab.msgOwnEvent(sn=hab.kever.sn,
+                                                         framed=True, gvrsn=TEST_VERSION),
+                                     version=TEST_VERSION,
+                                     kind=Kinds.json)
 
         notifier = Notifier(hby=hby)
         mux = Multiplexor(hby=hby, notifier=notifier)
@@ -723,7 +895,7 @@ def test_multisig_incept_handler(mockHelpingNowUTC):
 
         ims = bytearray(exn.raw)
         ims.extend(atc)
-        Parser(version=Vrsn_1_0).parseOne(ims=ims, exc=exc)
+        Parser(version=TEST_VERSION).parseOne(ims=ims, exc=exc)
         assert len(notifier.signaler.signals) == 0
 
         esaid = exn.ked['e']['d']
@@ -735,9 +907,52 @@ def test_multisig_incept_handler(mockHelpingNowUTC):
         assert prefixers[0].qb64 == exn.pre
 
 
+def test_multisig_incept_handler_parses_approved_v1_embed(mockHelpingNowUTC):
+    with openHab(name="approved-embed1", salt=b'0123456789abcdef',
+                 transferable=True, temp=True, version=Vrsn_1_0, kind=Kinds.json) as (hby1, hab1), \
+            openHab(name="approved-embed2", salt=b'abcdef0123456789',
+                    transferable=True, temp=True, version=Vrsn_1_0, kind=Kinds.json) as (hby2, hab2):
+        Parser(version=TEST_VERSION).parse(ims=bytearray(hab2.msgOwnEvent(sn=0, framed=True,
+                                                                          gvrsn=TEST_VERSION)),
+                                           kvy=hby1.kvy, local=True)
+        Parser(version=TEST_VERSION).parse(ims=bytearray(hab1.msgOwnEvent(sn=0, framed=True,
+                                                                          gvrsn=TEST_VERSION)),
+                                           kvy=hby2.kvy, local=True)
+
+        smids = [hab1.pre, hab2.pre]
+        inits = dict(toad=0, wits=[], isith="2", nsith="2", version=Vrsn_1_0, kind=Kinds.json)
+        ghab1 = hby1.makeGroupHab(group="approved-embed", mhab=hab1,
+                                  smids=smids, rmids=None, **inits)
+        ghab2 = hby2.makeGroupHab(group="approved-embed", mhab=hab2,
+                                  smids=smids, rmids=None, **inits)
+
+        icp1 = ghab1.msgOwnInception(allowPartiallySigned=True)
+        exn1, _ = multisigInceptExn(hab=ghab1.mhab, smids=ghab1.smids,
+                                    rmids=ghab1.rmids, icp=icp1,
+                                    version=TEST_VERSION, kind=Kinds.json)
+        icp2 = ghab2.msgOwnInception(allowPartiallySigned=True)
+        exn2, atc2 = multisigInceptExn(hab=ghab2.mhab, smids=ghab2.smids,
+                                       rmids=ghab2.rmids, icp=icp2,
+                                       version=TEST_VERSION, kind=Kinds.json)
+
+        notifier = Notifier(hby=hby1)
+        mux = Multiplexor(hby=hby1, notifier=notifier)
+        exc = Exchanger(hby=hby1, handlers=[])
+        loadHandlers(exc=exc, mux=mux)
+
+        mux.add(exn1)  # Record local approval before the matching peer proposal arrives.
+        ims = bytearray(exn2.raw)
+        ims.extend(atc2)
+        Parser(version=TEST_VERSION).parseOne(ims=ims, exc=exc)
+
+        serder = SerderKERI(raw=icp1)
+        sigers = hby1.db.sigs.get(keys=(serder.preb, serder.saidb))
+        assert [siger.index for siger in sigers] == [0, 1]
+
+
 def test_multisig_rotate_handler(mockHelpingNowUTC):
     with openMultiSig(prefix="test") as ((hby1, ghab1), (hby2, ghab2), (_, _)):
-        msg = ghab1.mhab.rotate()
+        msg = ghab1.mhab.rotate(framed=True, version=Vrsn_1_0, kind=Kinds.json, gvrsn=TEST_VERSION)
         notifier = Notifier(hby=hby1)
         mux = Multiplexor(hby=hby1, notifier=notifier)
         exc = Exchanger(hby=hby1, handlers=[])
@@ -745,10 +960,10 @@ def test_multisig_rotate_handler(mockHelpingNowUTC):
 
         # create and send message from ghab2
         exn, atc = multisigRotateExn(ghab=ghab2, smids=ghab1.smids, rmids=ghab1.rmids,
-                                              rot=msg)
+                                     rot=msg, version=TEST_VERSION, kind=Kinds.json)
         ims = bytearray(exn.raw)
         ims.extend(atc)
-        Parser(version=Vrsn_1_0).parseOne(ims=ims, exc=exc)
+        Parser(version=TEST_VERSION).parseOne(ims=ims, exc=exc)
 
         # One notification
         assert len(notifier.signaler.signals) == 1
@@ -763,10 +978,10 @@ def test_multisig_rotate_handler(mockHelpingNowUTC):
 
         # Send the same message from ghab1
         exn, atc = multisigRotateExn(ghab=ghab1, smids=ghab1.smids, rmids=ghab1.rmids,
-                                              rot=msg)
+                                     rot=msg, version=TEST_VERSION, kind=Kinds.json)
         ims = bytearray(exn.raw)
         ims.extend(atc)
-        Parser(version=Vrsn_1_0).parseOne(ims=ims, exc=exc)
+        Parser(version=TEST_VERSION).parseOne(ims=ims, exc=exc)
 
         # There should still only be one notification because we don't notify for our own event
         assert len(notifier.signaler.signals) == 1
@@ -781,9 +996,11 @@ def test_multisig_rotate_handler(mockHelpingNowUTC):
 
 def test_multisig_interact_handler(mockHelpingNowUTC):
     with openMultiSig(prefix="test") as ((hby1, ghab1), (_, ghab2), (_, _)):
-        ixn = ghab1.mhab.interact()
+        ixn = ghab1.mhab.interact(framed=True, version=Vrsn_1_0, kind=Kinds.json, gvrsn=TEST_VERSION)
         exn, atc = multisigInteractExn(ghab=ghab2, aids=ghab1.smids,
-                                                ixn=ixn)
+                                       ixn=ixn,
+                                       version=TEST_VERSION,
+                                       kind=Kinds.json)
 
         notifier = Notifier(hby=hby1)
         mux = Multiplexor(hby=hby1, notifier=notifier)
@@ -792,7 +1009,7 @@ def test_multisig_interact_handler(mockHelpingNowUTC):
 
         ims = bytearray(exn.raw)
         ims.extend(atc)
-        Parser(version=Vrsn_1_0).parseOne(ims=ims, exc=exc)
+        Parser(version=TEST_VERSION).parseOne(ims=ims, exc=exc)
 
         esaid = exn.ked['e']['d']
         assert len(notifier.signaler.signals) == 1

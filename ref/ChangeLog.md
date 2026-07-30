@@ -2,6 +2,56 @@
 
 ## 2.0.0-dev6
 
+*** peer.exchange has been replaced with a combination of either core.eventing.exchange
+or peer.specialExhange. peer.specialExchange supports the embeds and diger parameters
+and returns a tuple of (exn, atc) exn Serder instance and atc attachments bytearray.
+Whereas eventing.exchange just returns the exchange Serder instance.
+
+
+*** peer.exchanging.exchange  normalizing call signature with core.eventing.exchange
+so that all KERI message function call signatures are aligned. currently
+peer.exchanging.exchange uses a differe signature. So to better support v2 with
+backwards compat for v1 want one exchange function.
+parameters changes:  date -> stamp, recipient->receiver payload->attributes
+No longer has embeds and diger this is for specialExchange
+return type is no longer tuple just SerderKERI
+
+*** peer.exchanging.specialExchange  now handles the special exchange with embeds
+and or diger  use this for v1 compatibility with old exchange.
+
+
+*** BaseHab and subclasses .incept alias for .make promoted to default and .make
+is alias. Future deprecate .make
+
+*** Kever .init and .update refactored signature to use delsner and delsger instead
+of delnum (which was not per convention) and deldiger to better match new convention
+for Number and Diger but name indicates sequence number and said diger
+
+### Kevery.processEvent signature change
+    delnum is now delsner  short for delegating sequence number
+    deldiger is now delsger short for delegating said diger
+
+### app.habbing.BaseHab.makeOwnEvent has been changed to .msgOwnEvent because
+it better fits what is does is to messagize its own event.
+.makeOwnEvent is now deprecated
+
+### app.habbing.BaseHab.makeOwnInception has been change to .msgOwnInception
+because it better fits what is does is to messagize its own inception event.
+.makeOwnInception is now deprecated
+
+### app.habbing.BaseHab.makeOtherEvent has been changed to .msgOtherEvent because
+it better fits what is does is to messagize some other event.
+.makeOtherEvent is now deprecated
+
+### core.eventing.messagize call signature changes: piplined parameter is replaced
+with framed and the default is framed=False. This is because the Parser meaning
+of piplined has evolved whereas messagize no longer tracks that meansing so
+framed is now the accurated parameter. Added other parameters to make it support
+verison 2
+BasHab methods that call messagize have pass through parameters with same semantics
+
+
+
 ### OnSuber and OnIoDupSuber remap of method names
 change method names to shadow super class methods to avoid confusion and reduce
 potential errors

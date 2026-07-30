@@ -7,6 +7,7 @@ https://docs.pytest.org/en/latest/pythonpath.html
 """
 import os
 import shutil
+import socket
 import multicommand
 import datetime
 
@@ -15,7 +16,7 @@ import pytest
 from hio.base import doing
 
 from keri import help, Schemes, Roles
-from keri.kering import Vrsn_1_0
+from keri.kering import Vrsn_1_0, Kinds
 from keri.core import scheming, coring, routing, eventing, parsing, signing
 from keri.help import helping
 from keri.recording import EndpointRecord, LocationRecord
@@ -123,9 +124,111 @@ def seeder():
     return DbSeed
 
 
+@pytest.fixture(scope="session", autouse=True)
+def isolate_keri_store_roots(tmp_path_factory):
+    """Give each pytest-xdist worker its own on-disk root for non-temp stores.
+
+    CI runs ``pytest -n auto``. Several tests open persistent (``temp=False``)
+    stores with a fixed name/base (e.g. ``name="test"``), which all resolve to
+    the same on-disk path under the store classes' ``HeadDirPath`` -- or
+    ``AltHeadDirPath`` when the head dir is not writable, as on CI. Under
+    parallel workers those paths collide, so one worker can observe another's
+    half-migrated database ("DB version None; migrations must be run") or a
+    half-written KEL ("Attempt to replay nonexistent pre=..."). Point each
+    worker's store root at its own per-worker temp directory so the paths can
+    never overlap.
+
+    Only active under xdist (where ``PYTEST_XDIST_WORKER`` is set); serial runs
+    are unchanged. ``temp=True`` stores are unaffected -- they already use
+    isolated ``/tmp`` directories. ``LMDBer`` is the base of the db (``Baser``),
+    keystore (``Keeper``) and registry (``Reger``) stores, so patching it covers
+    all three; ``Configer`` covers the config store.
+    """
+    if not os.environ.get("PYTEST_XDIST_WORKER"):
+        yield
+        return
+
+    from keri.db.dbing import LMDBer
+    from keri.app.configing import Configer
+
+    root = str(tmp_path_factory.getbasetemp())  # unique per xdist worker
+    saved = [(cls, cls.HeadDirPath, cls.AltHeadDirPath)
+             for cls in (LMDBer, Configer)]
+    for cls in (LMDBer, Configer):
+        cls.HeadDirPath = root
+        cls.AltHeadDirPath = root
+    try:
+        yield
+    finally:
+        for cls, head, alt in saved:
+            cls.HeadDirPath = head
+            cls.AltHeadDirPath = alt
+
+
+def _unused_tcp_port():
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return sock.getsockname()[1]
+
+
+@pytest.fixture(scope="session")
+def unused_tcp_port_factory(tmp_path_factory):
+    """Return a callable that allocates currently free localhost TCP ports."""
+
+    produced = set()
+    base = tmp_path_factory.getbasetemp()
+    root = base.parent if os.environ.get("PYTEST_XDIST_WORKER") else base
+    reservationDir = root / "keripy-port-reservations"
+    reservationDir.mkdir(parents=True, exist_ok=True)
+
+    def make():
+        for _ in range(100):
+            port = _unused_tcp_port()
+            if port in produced:
+                continue
+
+            try:
+                fd = os.open(reservationDir / f"{port}.lock",
+                             os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            except FileExistsError:
+                continue
+
+            os.close(fd)
+            produced.add(port)
+            return port
+
+        raise RuntimeError("unable to allocate an unused TCP port")
+
+    return make
+
+
+@pytest.fixture()
+def unused_tcp_port(unused_tcp_port_factory):
+    return unused_tcp_port_factory()
+
+
+@pytest.fixture()
+def witnessPorter(unused_tcp_port_factory):
+    """Allocate witness TCP/HTTP ports and matching endpoint URLs for one test."""
+
+    def make(*aliases):
+        ports = {}
+        urls = {}
+        for alias in aliases:
+            tcpPort = unused_tcp_port_factory()
+            httpPort = unused_tcp_port_factory()
+            ports[alias] = {"tcp": tcpPort, "http": httpPort}
+            urls[f"{alias}:tcp"] = f"tcp://127.0.0.1:{tcpPort}/"
+            urls[f"{alias}:http"] = f"http://127.0.0.1:{httpPort}/"
+
+        return ports, urls
+
+    return make
+
+
 class DbSeed:
     @staticmethod
-    def seedWitEnds(db, witHabs, protocols=None):
+    def seedWitEnds(db, witHabs, protocols=None, version=Vrsn_1_0, kind=Kinds.json, witnessUrls=None):
         """ Add endpoint and location records for well known test witnesses
 
         Args:
@@ -140,22 +243,30 @@ class DbSeed:
         rvy = routing.Revery(db=db, rtr=rtr)
         kvy = eventing.Kevery(db=db, lax=False, local=True, rvy=rvy)
         kvy.registerReplyRoutes(router=rtr)
-        psr = parsing.Parser(framed=True, kvy=kvy, rvy=rvy, version=Vrsn_1_0)
+        psr = parsing.Parser(framed=True, kvy=kvy, rvy=rvy, version=version)
 
         if protocols is None:
             protocols = [Schemes.tcp, Schemes.http]
 
+        witnessUrls = witnessUrls if witnessUrls is not None else WitnessUrls
+
         for scheme in protocols:
             msgs = bytearray()
             for hab in witHabs:
-                url = WitnessUrls[f"{hab.name}:{scheme}"]
+                url = witnessUrls[f"{hab.name}:{scheme}"]
                 msgs.extend(hab.makeEndRole(eid=hab.pre,
                                             role=Roles.controller,
-                                            stamp=help.nowIso8601()))
+                                            stamp=help.nowIso8601(),
+                                            version=version,
+                                            kind=kind,
+                                            gvrsn=version,))
 
                 msgs.extend(hab.makeLocScheme(url=url,
                                               scheme=scheme,
-                                              stamp=help.nowIso8601()))
+                                              stamp=help.nowIso8601(),
+                                              version=version,
+                                              kind=kind,
+                                              gvrsn=version,))
                 psr.parse(ims=msgs)
 
     @staticmethod

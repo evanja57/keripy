@@ -21,10 +21,11 @@ Protocolage = namedtuple("Protocolage", "keri acdc")
 Protocols = Protocolage(keri="KERI", acdc="ACDC")
 
 Versionage = namedtuple("Versionage", "major minor")
-Version = Versionage(major=1, minor=0)  # KERI Protocol Version
-Vrsn_1_0 = Versionage(major=1, minor=0)  # KERI Protocol Version Specific
-Vrsn_2_0 = Versionage(major=2, minor=0)  # KERI Protocol Version Specific
-
+Version = Versionage(major=2, minor=0)  # Default KERI Protocol, CESR Genus Version
+Vrsn_1_0 = Versionage(major=1, minor=0)  # Protocol/Genus Version 1 Specific
+Vrsn_2_0 = Versionage(major=2, minor=0)  # Protocol/Genus Version 2 Specific
+GVC_1_0 = '-_AAABAA'
+GVC_2_0 = '-_AAACAA'
 
 # "{:0{}x}".format(300, 6)  # make num char in hex a variable
 # '00012c'
@@ -50,7 +51,7 @@ VER2TERM = b'.'  # teminator character
 VEREX2 = ( b'(?P<proto2>[A-Z]{4})'
            b'(?P<pmajor2>[0-9A-Za-z_-])(?P<pminor2>[0-9A-Za-z_-]{2})'
            b'(?P<gmajor2>[0-9A-Za-z_-])(?P<gminor2>[0-9A-Za-z_-]{2})'
-           b'(?P<kind2>[A-Z]{4})(?P<size2>[0-9A-Za-z_-]{4})\.')
+           b'(?P<kind2>[A-Z]{4})(?P<size2>[0-9A-Za-z_-]{4})\\.')
 
 VEREX = VEREX2 + b'|' + VEREX1
 
@@ -157,9 +158,10 @@ def versify(proto=Protocols.keri, pvrsn=Version, kind=Kinds.json, size=0, gvrsn=
 
     if pvrsn.major < 2:  # version1 version string
         if gvrsn is not None:
-            raise VersionError(f"Invalid (not None) CESR genus version="
-                               f"{gvrsn.major}.{gvrsn.minor} for pvrsn="
-                               f"{pvrsn.major}.{pvrsn.minor} ")
+            if gvrsn.major != pvrsn.major or gvrsn.minor != pvrsn.minor:
+                raise VersionError(f"Invalid CESR genus version="
+                                   f"{gvrsn.major}.{gvrsn.minor} for pvrsn="
+                                   f"{pvrsn.major}.{pvrsn.minor} ")
         if kind == Kinds.cesr:
             raise KindError(f"Invalid serialization {kind=} for message protocol"
                             f"  major version={pvrsn.major}")
@@ -377,12 +379,6 @@ Rolage = namedtuple("Rolage", 'controller witness registrar gateway watcher judg
 Roles = Rolage(controller='controller', witness='witness', registrar='registrar', gateway="gateway",
                watcher='watcher', judge='judge', juror='juror', peer='peer', mailbox="mailbox", agent="agent", indexer="indexer")
 
-OOBI_RE = re.compile('\\A/oobi/(?P<cid>[^/]+)/(?P<role>[^/]+)(?:/(?P<eid>[^/]+))?\\Z',
-                     re.IGNORECASE)
-DOOBI_RE = re.compile('\\A/oobi/(?P<said>[^/]+)\\Z', re.IGNORECASE)
-WOOBI_RE = re.compile('\\A/.well-known/keri/oobi/(?P<cid>[^/]+)\\Z')
-OOBI_AID_HEADER = "KERI-AID"
-
 
 @dataclass(frozen=True)
 class TraitCodex:
@@ -487,6 +483,8 @@ class MissingEntryError(DatabaseError):
     Usage:
         raise MissingEntryError("error message")
     """
+
+
 
 
 # Errors when initing cryptographic material

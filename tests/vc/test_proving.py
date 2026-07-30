@@ -8,7 +8,7 @@ import pytest
 from keri import (InvalidValueError, Versionage,
                   Vrsn_1_0, Kinds, Protocols, versify)
 from keri.core import (Prefixer, Seqner, Diger, Siger,
-                       Saider, Seqner, Parser, Salter,
+                       Saider, Number, Seqner, Parser, Salter,
                        Counter, scheming, Schemer,
                        JSONSchema, SerderACDC, CacheResolver,
                        CtrDex_1_0, Codens, MtrDex)
@@ -18,13 +18,14 @@ from keri.vc import credential
 from keri.vdr import Verifier, Regery
 
 
+
 def test_proving(mockHelpingNowIso8601):
     """Test credential proof with SerderACDC"""
 
     sidSalt = Salter(raw=b'0123456789abcdef').qb64
 
-    with openHby(name="sid", base="test", salt=sidSalt) as sidHby:
-        sidHab = sidHby.makeHab(name="test", )
+    with openHby(name="sid", base="test", salt=sidSalt, version=Vrsn_1_0) as sidHby:
+        sidHab = sidHby.makeHab(name="test", version=Vrsn_1_0, kind=Kinds.json)
         assert sidHab.pre == 'EIaGMMWJFPmtXznY1IIiKDIrg-vIyge6mBl2QV8dDjI3'
         sed = dict()
         sed["$id"] = ""
@@ -56,19 +57,21 @@ def test_proving(mockHelpingNowIso8601):
 
         creder = credential(issuer=sidHab.pre,
                             schema=schemer.said,
-                            data=credSubject)
+                            data=credSubject,
+                            version=Vrsn_1_0, kind=Kinds.json)
 
-        msg = sidHab.endorse(serder=creder)
-        assert msg == (b'{"v":"ACDC10JSON000195_","d":"EPVHgaM_Yad1b5VHs6SIZyqF72m_byxSYU'
-                       b'w3VNx5Ubqt","i":"EIaGMMWJFPmtXznY1IIiKDIrg-vIyge6mBl2QV8dDjI3","'
-                       b's":"EHggmYtUecR1JYbMkDZv-za1EExCmR-T_bwaJp3PQIoW","a":{"d":"EO-m'
-                       b'lywujxMkv1yLxir1m5c0p-fZLuprOrgZAIohJdmQ","dt":"2021-06-27T21:26'
-                       b':21.233257+00:00","i":"EPmpiN6bEM8EI0Mctny-6AfglVOKnJje8-vqyKTlh'
-                       b'0nc","lei":"254900OPPU84GM83MG36","issuanceDate":"2021-06-27T21:'
-                       b'26:21.233257+00:00"}}-VA0-FABEIaGMMWJFPmtXznY1IIiKDIrg-vIyge6mBl'
-                       b'2QV8dDjI30AAAAAAAAAAAAAAAAAAAAAAAEIaGMMWJFPmtXznY1IIiKDIrg-vIyge'
-                       b'6mBl2QV8dDjI3-AABAAAmfpF4BjMS3b4kzvPdOpkSlH3PiVx7MSySulPyKFxtaS3'
-                       b'oxH45Y3kIvZg67u2DyxtUqVixVzRhOOTnMAB_SowI')
+        msg = sidHab.endorse(serder=creder, framed=False, gvrsn=Vrsn_1_0)
+        assert msg == (b'{"v":"ACDC10JSON000195_","d":"EPVHgaM_Yad1b5VHs6SIZyqF72m_by'
+                       b'xSYUw3VNx5Ubqt","i":"EIaGMMWJFPmtXznY1IIiKDIrg-vIyge6mBl2QV8'
+                       b'dDjI3","s":"EHggmYtUecR1JYbMkDZv-za1EExCmR-T_bwaJp3PQIoW","a'
+                       b'":{"d":"EO-mlywujxMkv1yLxir1m5c0p-fZLuprOrgZAIohJdmQ","dt":"'
+                       b'2021-06-27T21:26:21.233257+00:00","i":"EPmpiN6bEM8EI0Mctny-6'
+                       b'AfglVOKnJje8-vqyKTlh0nc","lei":"254900OPPU84GM83MG36","issua'
+                       b'nceDate":"2021-06-27T21:26:21.233257+00:00"}}-VA0-FABEIaGMMW'
+                       b'JFPmtXznY1IIiKDIrg-vIyge6mBl2QV8dDjI30AAAAAAAAAAAAAAAAAAAAAA'
+                       b'AEIaGMMWJFPmtXznY1IIiKDIrg-vIyge6mBl2QV8dDjI3-AABAAAmfpF4BjM'
+                       b'S3b4kzvPdOpkSlH3PiVx7MSySulPyKFxtaS3oxH45Y3kIvZg67u2DyxtUqVi'
+                       b'xVzRhOOTnMAB_SowI')
 
         creder = SerderACDC(raw=msg) # Creder(raw=msg)
         proof = msg[creder.size:]
@@ -87,8 +90,8 @@ def test_proving(mockHelpingNowIso8601):
         prefixer = Prefixer(qb64b=proof, strip=True)
         assert prefixer.qb64 == sidHab.pre
 
-        seqner = Seqner(qb64b=proof, strip=True)
-        assert seqner.sn == sidHab.kever.sn
+        sner = Number(qb64b=proof, strip=True)
+        assert sner.sn == sidHab.kever.sn
 
         diger = Diger(qb64b=proof, strip=True)
         assert diger.qb64 == sidHab.kever.serder.said
@@ -117,7 +120,7 @@ def test_credentialer():
 
     sub = dict(a=123, b="abc", issuanceDate="2021-06-27T21:26:21.233257+00:00")
     d = dict(
-        v=versify(proto=Protocols.acdc, kind=Kinds.json, size=0),
+        v=versify(proto=Protocols.acdc, pvrsn=Vrsn_1_0, kind=Kinds.json, size=0),
         d="",
         i="EF6maPM_d5ZN7U3NRFC1-6TM7k_E00_a8AG9YyLA4uWi",
         s="abc",
@@ -130,7 +133,7 @@ def test_credentialer():
     creder = SerderACDC(sad=d)  # Creder(ked=d)
     assert creder.said == said
     assert creder.kind == Kinds.json
-    assert creder.issuer == "EF6maPM_d5ZN7U3NRFC1-6TM7k_E00_a8AG9YyLA4uWi"
+    assert creder.israid == "EF6maPM_d5ZN7U3NRFC1-6TM7k_E00_a8AG9YyLA4uWi"
     assert creder.schema == "abc"
     assert creder.attrib == sub
     assert creder.sad == d
@@ -151,18 +154,18 @@ def test_credentialer():
 
     creder = SerderACDC(raw=raw1)  # Creder(raw=raw1)
     assert creder.kind == Kinds.json
-    assert creder.issuer == "EF6maPM_d5ZN7U3NRFC1-6TM7k_E00_a8AG9YyLA4uWi"
+    assert creder.israid == "EF6maPM_d5ZN7U3NRFC1-6TM7k_E00_a8AG9YyLA4uWi"
     assert creder.sad == d
     assert creder.size == 211
 
     d2 = dict(d)
     d2['d'] = ""
-    d2["v"] = versify(proto=Protocols.acdc, kind=Kinds.cbor, size=0)
+    d2["v"] = versify(proto=Protocols.acdc, pvrsn=Vrsn_1_0, kind=Kinds.cbor, size=0)
     _, d2 = Saider.saidify(sad=d2)
 
     creder = SerderACDC(sad=d2)  # Creder(ked=d2)
     assert creder.said == "EJHxKgPiGfPmdH2EbybID30hXIl916ILZQgC3JOa0cvY"  # shouldnt this be different here?
-    assert creder.issuer == "EF6maPM_d5ZN7U3NRFC1-6TM7k_E00_a8AG9YyLA4uWi"
+    assert creder.israid == "EF6maPM_d5ZN7U3NRFC1-6TM7k_E00_a8AG9YyLA4uWi"
     assert creder.schema == "abc"
     assert creder.attrib == sub
     assert creder.size == 183
@@ -175,7 +178,7 @@ def test_credentialer():
     raw2 = bytes(creder.raw)
     creder = SerderACDC(raw=raw2)  # Creder(raw=raw2)
     assert creder.said == "EJHxKgPiGfPmdH2EbybID30hXIl916ILZQgC3JOa0cvY"
-    assert creder.issuer == "EF6maPM_d5ZN7U3NRFC1-6TM7k_E00_a8AG9YyLA4uWi"
+    assert creder.israid == "EF6maPM_d5ZN7U3NRFC1-6TM7k_E00_a8AG9YyLA4uWi"
     assert creder.schema == "abc"
     assert creder.attrib == sub
     assert creder.size == 183
@@ -183,12 +186,12 @@ def test_credentialer():
     assert creder.sad == d2
 
     d3 = dict(d)
-    d3["v"] = versify(proto=Protocols.acdc, kind=Kinds.mgpk, size=0)
+    d3["v"] = versify(proto=Protocols.acdc, pvrsn=Vrsn_1_0, kind=Kinds.mgpk, size=0)
     _, d3 = Saider.saidify(sad=d3)
     creder = SerderACDC(sad=d3)  # Creder(ked=d3)
 
     assert creder.said == "EMZeK1yLZd1JV6Ktdq_YUt-YbyoTWB9UMcFzuiDly2Y6"
-    assert creder.issuer == "EF6maPM_d5ZN7U3NRFC1-6TM7k_E00_a8AG9YyLA4uWi"
+    assert creder.israid == "EF6maPM_d5ZN7U3NRFC1-6TM7k_E00_a8AG9YyLA4uWi"
     assert creder.schema == "abc"
     assert creder.attrib == sub
     assert creder.size == 182
@@ -202,7 +205,7 @@ def test_credentialer():
     raw3 = bytes(creder.raw)
     creder = SerderACDC(raw=raw3)
     assert creder.said == "EMZeK1yLZd1JV6Ktdq_YUt-YbyoTWB9UMcFzuiDly2Y6"
-    assert creder.issuer == "EF6maPM_d5ZN7U3NRFC1-6TM7k_E00_a8AG9YyLA4uWi"
+    assert creder.israid == "EF6maPM_d5ZN7U3NRFC1-6TM7k_E00_a8AG9YyLA4uWi"
     assert creder.schema == "abc"
     assert creder.attrib == sub
     assert creder.size == 182
@@ -231,7 +234,8 @@ def test_credential(mockHelpingNowIso8601):
 
     cred = credential(schema="EAllThM1rLBSMZ_ozM1uAnFvSfC0N1jaQ42aKU5sCZ5Q",
                       issuer="EBNHFK056fqNSG_MDE7d_Eqk0bazefvd4eeQLMPPNBnM",
-                      data=d, source=s, status="ECQoH02zJRCTNz-Wl3nnkUD_RVSzSwcoNvmfa18AWt3M")
+                      data=d, source=s, status="ECQoH02zJRCTNz-Wl3nnkUD_RVSzSwcoNvmfa18AWt3M",
+                      version=Vrsn_1_0, kind=Kinds.json)
 
     assert cred.size == len(cred.raw)
     assert cred.raw == (b'{"v":"ACDC10JSON00023b_","d":"EFyT2QGVlx0zL4ft1WNDzEeBh9lHN-vfcjL18V8h-zn1",'
@@ -257,7 +261,8 @@ def test_privacy_preserving_credential(mockHelpingNowIso8601):
                       private_credential_nonce=Salter(raw=b'0123456789abcdef').qb64,
                       private_subject_nonce=Salter(raw=b'abcdef0123456789').qb64,
                       issuer="EMZeK1yLZd1JV6Ktdq_YUt-YbyoTWB9UMcFzuiDly2Y6",
-                      data=d, status="ETQoH02zJRCTNz-Wl3nnkUD_RVSzSwcoNvmfa18AWt3M")
+                      data=d, status="ETQoH02zJRCTNz-Wl3nnkUD_RVSzSwcoNvmfa18AWt3M",
+                      version=Vrsn_1_0, kind=Kinds.json)
 
     assert cred.size == len(cred.raw)
     assert "u" in cred.sad
@@ -274,11 +279,11 @@ def test_privacy_preserving_credential(mockHelpingNowIso8601):
 
 
 def test_credential_parsator():
-    with openHab(name="sid", temp=True, salt=b'0123456789abcdef') as (hby, hab):
+    with openHab(name="sid", temp=True, salt=b'0123456789abcdef', version=Vrsn_1_0, kind=Kinds.json) as (hby, hab):
         assert hab.pre == 'EKC8085pwSwzLwUGzh-HrEoFDwZnCJq27bVp5atdMT9o'
 
         regery = Regery(hby=hby, name="sid", temp=True)
-        issuer = regery.makeRegistry(prefix=hab.pre, name="sid", noBackers=True, estOnly=True)
+        issuer = regery.makeRegistry(prefix=hab.pre, name="sid", noBackers=True, estOnly=True, version=Vrsn_1_0, kind=Kinds.json)
 
         credSubject = dict(
             d="",
@@ -288,7 +293,8 @@ def test_credential_parsator():
         creder = credential(issuer=hab.pre,
                             schema="EAbrwlefuH-F_KU_FPWAZR78A3pmSVDlnfJUqnm8Lhr4",
                             data=credSubject,
-                            status=issuer.regk)
+                            status=issuer.regk,
+                            version=Vrsn_1_0, kind=Kinds.json)
 
         msg = bytearray(creder.raw)
         msg.extend(Counter(Codens.SealSourceTriples, count=1, version=Vrsn_1_0).qb64b)

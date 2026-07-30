@@ -11,12 +11,27 @@ from hio.base import doing
 from hio.help import ogler
 from hio.core.tcp import clienting, serving
 
+from keri import Vrsn_1_0, Kinds
 from keri.core import Salter, Diger, MtrDex, incept
 from keri.app import Director, Directant, Reactor, openHby, runController
 from keri.demo import setupDemoController
 
 
-def test_directing_basic():
+
+def test_directing_defaults_use_hab_version_and_kind():
+    with openHby(name="director-defaults", base="test", version=Vrsn_1_0) as hby:
+        hab = hby.makeHab(name="director-defaults", version=Vrsn_1_0, kind=Kinds.json)
+        client = clienting.Client(host='127.0.0.1', port=5631)
+
+        director = Director(hab=hab, client=client)
+        reactor = Reactor(hab=hab, client=client)
+
+        assert director.version == Vrsn_1_0
+        assert director.kind == Kinds.json
+        assert reactor.parser.version == Vrsn_1_0
+
+
+def test_directing_basic(unused_tcp_port_factory):
     """
     Test directing
     """
@@ -31,7 +46,7 @@ def test_directing_basic():
     # bob inception transferable (nxt digest not empty)
     bobSerder = incept(keys=[bobSigners[0].verfer.qb64],
                                 ndigs=[Diger(ser=bobSigners[1].verfer.qb64b).qb64],
-                                code=MtrDex.Blake3_256)
+                                code=MtrDex.Blake3_256, version=Vrsn_1_0, kind=Kinds.json)
 
     bob = bobSerder.ked["i"]
     assert bob == 'EFa1wAk_coghxxGCID6jEN79Kmvyj0Y1wWN_ndUv3LjW'
@@ -44,24 +59,24 @@ def test_directing_basic():
     # eve inception transferable (nxt digest not empty)
     eveSerder = incept(keys=[eveSigners[0].verfer.qb64],
                                 ndigs=[Diger(ser=eveSigners[1].verfer.qb64b).qb64],
-                                code=MtrDex.Blake3_256)
+                                code=MtrDex.Blake3_256, version=Vrsn_1_0, kind=Kinds.json)
 
     eve = eveSerder.ked["i"]
     assert eve == 'EFhg5my9DuMU6gw1CVk6QgkmZKBttWSXDzVzWVmxh0_K'
 
 
-    with (openHby(name="eve", base="test") as eveHby,
-          openHby(name="bob", base="test") as bobHby):
+    with (openHby(name="eve", base="test", version=Vrsn_1_0) as eveHby,
+          openHby(name="bob", base="test", version=Vrsn_1_0) as bobHby):
 
         limit = 1.0
         tock = 0.03125
         doist = doing.Doist(limit=limit, tock=tock)
 
-        bobPort = 5620  # bob's TCP listening port for server
-        evePort = 5621  # eve's TCP listneing port for server
+        bobPort = unused_tcp_port_factory()
+        evePort = unused_tcp_port_factory()
 
         # setup bob
-        bobHab = bobHby.makeHab(name="Bob", secrecies=bobSecrecies)
+        bobHab = bobHby.makeHab(name="Bob", secrecies=bobSecrecies, version=Vrsn_1_0, kind=Kinds.json)
         assert bobHab.iserder.said == bobSerder.said
         assert bobHab.pre == bob
 
@@ -91,7 +106,7 @@ def test_directing_basic():
         # Bob's Reactants created on demand
 
         # setup eve
-        eveHab = eveHby.makeHab(name="Eve", secrecies=eveSecrecies)
+        eveHab = eveHby.makeHab(name="Eve", secrecies=eveSecrecies, version=Vrsn_1_0, kind=Kinds.json)
         print(eveHab.iserder.pretty())
         print(eveSerder.pretty())
         assert eveHab.iserder.said == eveSerder.said
@@ -157,15 +172,15 @@ def test_directing_basic():
     """End Test"""
 
 
-def test_runcontroller_demo():
+def test_runcontroller_demo(unused_tcp_port_factory):
     """
     Test demo runController function
     """
     ogler.resetLevel(level=logging.DEBUG)
 
     name = "bob"  # must be one of 'bob', 'sam', 'eve'
-    remote = 5621
-    local = 5620
+    remote = unused_tcp_port_factory()
+    local = unused_tcp_port_factory()
     expire = 1.0
 
     raw = b"raw salt to test"
@@ -179,7 +194,8 @@ def test_runcontroller_demo():
     doers = setupDemoController(secrecies=secrecies,
                                 name=name,
                                 remotePort=remote,
-                                localPort=local)
+                                localPort=local,
+                                version=Vrsn_1_0, kind=Kinds.json)
 
     runController(doers=doers, expire=expire)
 

@@ -51,7 +51,7 @@ setup(
         'Operating System :: Unix',
         'Operating System :: POSIX',
         'Operating System :: Microsoft :: Windows',
-        'Programming Language :: Python :: 3.13',
+        'Programming Language :: Python :: 3.14',
         'Programming Language :: Python :: Implementation :: CPython',
         # uncomment if you test on these interpreters:
         # 'Programming Language :: Python :: Implementation :: PyPy',
@@ -100,6 +100,7 @@ setup(
                     'coverage>=7.13.1',
                     'pytest>=9.0.2',
                     'pytest-shell>=0.3.2',
+                    'pytest-xdist>=3.8.0',
                   ],
     setup_requires=[
     ],

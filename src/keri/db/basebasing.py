@@ -7,8 +7,8 @@ from hio.help import ogler
 
 from keri import __version__
 from ..help import helping
-from ..kering import (MissingEntryError, ConfigurationError,
-                      ValidationError, Vrsn_1_0)
+from ..kering import (MissingEntryError, SerializeError, ConfigurationError,
+                      ValidationError, Version)
 
 logger = ogler.getLogger()
 
@@ -175,7 +175,7 @@ class BaserBase:
     Base class for Baser and WebBaser.
 
     BaserBase provides minimal, non‑persistent structures like
-    prefixes, groups, kevers and db as well as common functions. 
+    prefixes, groups, kevers and db as well as common functions.
 
     Attributes:
         - prefixes (oset): set of local prefix identifiers (`prefixes`)
@@ -357,7 +357,7 @@ class BaserBase:
         return migrations
 
 
-    def clonePreIter(self, pre, fn=0):
+    def clonePreIter(self, pre, fn=0, gvrsn=Version, *, version=None):
         """
         Returns iterator of first seen event messages with attachments for the
         identifier prefix pre starting at first seen order number, fn.
@@ -366,22 +366,26 @@ class BaserBase:
         Parameters:
             pre is bytes of itdentifier prefix
             fn is int fn to resume replay. Earliset is fn=0
+            gvrsn (Versionage): CESR genus version for attachments
+            version (Versionage): legacy alias for gvrsn
 
         Returns:
            msgs (Iterator): over all items with pre starting at fn
         """
-        if hasattr(pre, 'encode'):
-            pre = pre.encode("utf-8")
+        #if hasattr(pre, 'encode'):
+            #pre = pre.encode("utf-8")
 
+        if version is not None:
+            gvrsn = version
         for keys, fn, dig in self.fels.getAllItemIter(keys=pre, on=fn):
             try:
-                msg = self.cloneEvtMsg(pre=pre, fn=fn, dig=dig)
-            except Exception:
+                msg = self.cloneEvtMsg(pre=pre, fn=fn, dig=dig, gvrsn=gvrsn)
+            except (MissingEntryError, SerializeError):
                 continue  # skip this event
             yield msg
 
 
-    def cloneAllPreIter(self):
+    def cloneAllPreIter(self, gvrsn=Version, *, version=None):
         """
         Returns iterator of first seen event messages with attachments for all
         identifier prefixes starting at key. If key == b'' then start at first
@@ -389,20 +393,26 @@ class BaserBase:
         Essentially a replay in first seen order with attachments of entire
         set of FELs.
 
+        Parameters:
+            gvrsn (Versionage): CESR genus version for attachments
+            version (Versionage): legacy alias for gvrsn
+
         Returns:
            msgs (Iterator): over all items in db
 
         """
+        if version is not None:
+            gvrsn = version
         for keys, fn, dig in self.fels.getAllItemIter(keys=b'', on=0):
             pre = keys[0].encode() if isinstance(keys[0], str) else keys[0]
             try:
-                msg = self.cloneEvtMsg(pre=pre, fn=fn, dig=dig)
-            except Exception:
+                msg = self.cloneEvtMsg(pre=pre, fn=fn, dig=dig, gvrsn=gvrsn)
+            except (MissingEntryError, SerializeError):
                 continue  # skip this event
             yield msg
 
 
-    def cloneEvtMsg(self, pre, fn, dig):
+    def cloneEvtMsg(self, pre, fn, dig, gvrsn=Version, *, version=None):
         """
         Clones Event as Serialized CESR Message with Body and attached Foot
 
@@ -410,94 +420,99 @@ class BaserBase:
             pre (bytes): identifier prefix of event
             fn (int): first seen number (ordinal) of event
             dig (bytes): digest of event
+            gvrsn (Versionage): CESR genus version for attachments
+            version (Versionage): legacy alias for gvrsn
 
         Returns:
-            bytearray: message body with attachments
+            msg (bytearray): message body with attachments
         """
-        from ..core import coring
-        from ..core.counting import Counter, Codens
+        from ..core import Prefixer, Number, Diger, SealSource, FirstSeen, messagize
 
-        msg = bytearray()  # message
-        atc = bytearray()  # attachments
-        dgkey = dgKey(pre, dig)  # get message
-        if not (serder := self.evts.get(keys=(pre, dig))):
+        if version is not None:
+            gvrsn = version
+
+        keys = (pre, dig)
+
+        # get serder
+        if not (serder := self.evts.get(keys=keys)):
             raise MissingEntryError("Missing event for dig={}.".format(dig))
-        msg.extend(serder.raw)
 
-        # add indexed signatures to attachments
-        if not (sigers := self.sigs.get(keys=dgkey)):
+        # get indexed signatures
+        if not (sigers := self.sigs.get(keys=keys)):
             raise MissingEntryError("Missing sigs for dig={}.".format(dig))
-        atc.extend(Counter(code=Codens.ControllerIdxSigs,
-                           count=len(sigers), version=Vrsn_1_0).qb64b)
-        for siger in sigers:
-            atc.extend(siger.qb64b)
 
-        # add indexed witness signatures to attachments
-        if wigers := self.wigs.get(keys=dgkey):
-            atc.extend(Counter(code=Codens.WitnessIdxSigs,
-                               count=len(wigers), version=Vrsn_1_0).qb64b)
-            for wiger in wigers:
-                atc.extend(wiger.qb64b)
+        # get indexed witness signatures if any
+        wigers = self.wigs.get(keys=keys)
 
-        # add authorizer (delegator/issuer) source seal event couple to attachments
-        if (duple := self.aess.get(keys=(pre, dig))) is not None:
-            number, diger = duple
-            atc.extend(Counter(code=Codens.SealSourceCouples,
-                               count=1, version=Vrsn_1_0).qb64b)
-            atc.extend(number.qb64b + diger.qb64b)
-
-        # add trans endorsement quadruples to attachments not controller
+        # get nontrans endorsement couples not witnesses
         # may have been originally key event attachments or receipted endorsements
-        if quads := self.vrcs.get(keys=dgkey):
-            atc.extend(Counter(code=Codens.TransReceiptQuadruples,
-                               count=len(quads), version=Vrsn_1_0).qb64b)
-            for pre, snu, diger, siger in quads:    # adapt to CESR
-                atc.extend(pre.qb64b)
-                atc.extend(snu.qb64b)
-                atc.extend(diger.qb64b)
-                atc.extend(siger.qb64b)
-
-        # add nontrans endorsement couples to attachments not witnesses
-        # may have been originally key event attachments or receipted endorsements
-        if coups := self.rcts.get(keys=dgkey):
-            atc.extend(Counter(code=Codens.NonTransReceiptCouples,
-                               count=len(coups), version=Vrsn_1_0).qb64b)
+        cigars = []
+        if coups := self.rcts.get(keys=keys):
             for prefixer, cigar in coups:
-                atc.extend(prefixer.qb64b)
-                atc.extend(cigar.qb64b)
+                cigar.verfer = prefixer  # assign verfer
+                cigars.append(cigar)
 
-        # add first seen replay couple to attachments
-        if not (dater := self.dtss.get(keys=dgkey)):
+        # get trans receipt/endorsement attachments not controller
+        # vrcsNew get non-controller trans receipt attachments
+        # may have been originally non-controller sigs or receipted endorsements
+        topkeys = (pre, dig)
+        rsets = dict()  # collate  by triple of rpre,rsnh,rdig
+        for quintkeys, siger in self.vrcs.getTopItemIter(keys=topkeys):
+            epre, edig, rpre, rsnh, rdig = quintkeys  # expand quintkeys tuple
+            triple = (rpre, rsnh, rdig)  # create triple of receiptor/endorser
+            if triple not in rsets:
+                rsets[triple] = [siger]
+            else:
+                rsets[triple].append(siger)
+
+        rsgs = []
+        if rsets:  # convert rsets dict to rsgs list of tuples
+            for triple, rigers in rsets.items():
+                rpre, rsnh, rdig = triple
+                rsgs.append((Prefixer(qb64=rpre),
+                             Number(snh=rsnh),
+                             Diger(qb64=rdig),
+                             rigers))
+
+        # get authorizer (delegator/issuer) source seal event couple if any
+        bonds = []
+        if couple := self.aess.get(keys=keys):
+            number, diger = couple
+            bonds.append(SealSource(s=number, d=diger))
+
+        # get first seen replay couples
+        if not (dater := self.dtss.get(keys=keys)):
             raise MissingEntryError("Missing datetime for dig={}.".format(dig))
-        atc.extend(Counter(code=Codens.FirstSeenReplayCouples,
-                           count=1, version=Vrsn_1_0).qb64b)
-        atc.extend(coring.Number(num=fn, code=coring.NumDex.Huge).qb64b)  # may not need to be Huge
-        atc.extend(dater.qb64b)
 
-        # prepend pipelining counter to attachments
-        if len(atc) % 4:
-            raise ValueError("Invalid attachments size={}, nonintegral"
-                             " quadlets.".format(len(atc)))
-        pcnt = Counter(code=Codens.AttachmentGroup,
-                       count=(len(atc) // 4), version=Vrsn_1_0).qb64b
-        msg.extend(pcnt)
-        msg.extend(atc)
+        bonds.append(FirstSeen(f=Number(num=fn), dt=dater))
+
+        msg = messagize(serder=serder, sigers=sigers, wigers=wigers,
+                        cigars=cigars, rsgs=rsgs, bonds=bonds, gvrsn=gvrsn)
         return msg
 
 
-    def cloneDelegation(self, kever):
+    def cloneDelegation(self, kever, gvrsn=None, *, version=None):
         """
-        Recursively clone delegation chain from AID of Kever if one exits.
+        Recursively clone delegation chain from AID of Kever if one exists.
 
         Parameters:
             kever (Kever): Kever from which to clone the delegator's AID.
+            gvrsn (Versionage | None): CESR genus version for attachments.
+                None means derive from ``kever.serder.gvrsn`` or
+                ``kever.serder.pvrsn`` so V1 KELs are not rebuilt with the
+                global V2 default.
+            version (Versionage): legacy alias for gvrsn
 
         """
+        if version is not None:
+            gvrsn = version
+        if gvrsn is None:
+            gvrsn = kever.serder.gvrsn or kever.serder.pvrsn
         if kever.delegated and kever.delpre in self.kevers:
             dkever = self.kevers[kever.delpre]
-            yield from self.cloneDelegation(dkever)
+            yield from self.cloneDelegation(dkever, gvrsn=gvrsn)
 
-            for dmsg in self.clonePreIter(pre=kever.delpre, fn=0):
+            for dmsg in self.clonePreIter(pre=kever.delpre, fn=0, gvrsn=gvrsn):
                 yield dmsg
 
 

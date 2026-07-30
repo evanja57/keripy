@@ -14,7 +14,7 @@ import pytest
 import lmdb
 from hio.base import doing
 
-from keri.kering import Kinds, Ilks, versify
+from keri.kering import Kinds, Ilks, Vrsn_1_0, versify
 from keri.app import openHby
 from keri.core import (Seqner, Diger, Number, Kever, Serder,
                        Signer, Siger, Salter, Dater, Prefixer,
@@ -740,106 +740,148 @@ def test_baser():
         assert db.ures.get(cKey) == []
         assert db.ures.get(dKey) == []
 
-        # Validator (transferable) Receipts
-        # test .vrcs sub db methods dgkey
-        key = dgKey(preb, digb)
-        assert key == f'{preb.decode("utf-8")}.{digb.decode("utf-8")}'.encode("utf-8")
+        # Validator (transferable) Receipts new vrcs vrcsNew form
+        # test .vrcs sub db methods dgkey  CesrIoSetSuber
+        # ioset vals are insertion ordered at each key,
+        # keys are lexicographically ordered
+        # receiptor basic test to confirm CesrIoSetSuber behavior
+        rprefixer = Prefixer(qb64="BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")  # fake prefix
+        rnumber = Number(num=1)
+        rdiger = Diger(ser=b"est1")    # digest of est event
 
-        p1 = Prefixer(qb64="BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")  # fake prefix
-        n1 = Number(num=1)
-        e1 = Diger(ser=b"est1")    # digest of est event
-        s1 = Siger(raw=b"\x00" * 64)  # 64‑byte fake signature
+        pre = preb.decode()
+        dig = digb.decode()
+        topkeys = (pre, dig)
+        allkeys = (pre, dig, rprefixer.qb64, rnumber.onkey, rdiger.qb64)
+        rsigerA = Siger(raw=b"\x00" * 64)  # 64‑byte fake signature
 
-        cesrVal = (p1, n1, e1, s1)
-        cesrVal = [cesrVal]
+        assert db.vrcs.get(allkeys) == []
+        assert db.vrcs.cnt(allkeys) == 0
+        assert db.vrcs.rem(allkeys) == False
+        assert db.vrcs.put(allkeys, rsigerA) is True
 
-        assert db.vrcs.get(key) == []
-        assert db.vrcs.cnt(key) == 0
-        assert db.vrcs.rem(key) == False
-
-        assert db.vrcs.put(key, cesrVal) is True
-
-        stored = db.vrcs.get(key)
+        stored = db.vrcs.get(allkeys)
         assert len(stored) == 1
-        sp1, sn1, se1, ss1 = stored[0]
+        assert stored[0].qb64 == rsigerA.qb64
 
-        assert sp1.qb64 == p1.qb64
-        assert sn1.num == n1.num
-        assert se1.qb64 == e1.qb64
-        assert ss1.raw == s1.raw
+        rsigerB = Siger(raw=b"\x01" * 64)  # 64‑byte fake signature
+        assert db.vrcs.add(allkeys, rsigerB) is True
 
-        assert db.vrcs.rem(key) == True
+        stored = db.vrcs.get(allkeys)
+        assert len(stored) == 2
+        assert stored[1].qb64 == rsigerB.qb64
 
-        # # dup vals are lexocographic
-        # Build several distinct typed CESR quadruples
-        pA = Prefixer(qb64="BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
-        pB = Prefixer(qb64="BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB")
-        pC = Prefixer(qb64="BCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC")
-        pD = Prefixer(qb64="BDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD")
+        results = [(keys, siger) for keys, siger in db.vrcs.getTopItemIter(keys=topkeys)]
+        assert len(results) == 2
+        assert results[0][0] == allkeys
+        assert results[0][1].qb64 == rsigerA.qb64
+        assert results[1][0] == allkeys
+        assert results[1][1].qb64 == rsigerB.qb64
 
-        nA = Number(num=1)
-        nB = Number(num=2)
-        nC = Number(num=3)
-        nD = Number(num=4)
-
-        eA = Diger(ser=b"estA")
-        eB = Diger(ser=b"estB")
-        eC = Diger(ser=b"estC")
-        eD = Diger(ser=b"estD")
-
-        sA = Siger(raw=b"\x00" * 64)
-        sB = Siger(raw=b"\x01" * 64)
-        sC = Siger(raw=b"\x02" * 64)
-        sD = Siger(raw=b"\x03" * 64)
-
-        quadA = (pA, nA, eA, sA)
-        quadB = (pB, nB, eB, sB)
-        quadC = (pC, nC, eC, sC)
-        quadD = (pD, nD, eD, sD)
-
-        vals = [quadD, quadB, quadC, quadA]   # intentionally out of order
-
-        # Initially empty
-        assert db.vrcs.get(key) == []
-        assert db.vrcs.cnt(key) == 0
-
-        # Insert multiple typed tuples
-        assert db.vrcs.put(key, vals) is True
-
-        # Insertion order is preserved
-        stored = db.vrcs.get(key)
-        assert len(stored) == len(vals)
-        for (sp, sn, se, ss), (ep, en, ee, es) in zip(stored, vals):
-            assert sp.qb64 == ep.qb64
-            assert sn.num == en.num
-            assert se.qb64 == ee.qb64
-            assert ss.raw == es.raw
-
-        assert db.vrcs.cnt(key) == 4
-
-        # Duplicate insertion should not add new entries
-        assert db.vrcs.put(key, [quadA]) == False
-        assert db.vrcs.put(key, [quadB]) == False   # quadB already present → no change
-        assert db.vrcs.put(key, [quadD]) == False   # quadD already present → no change
-        assert db.vrcs.put(key, [quadC]) == False   # quadC already present → no change
-
-        # Iteration returns the same tuples in insertion order
-        itered = list(db.vrcs.getIter(key))
-        for (sp, sn, se, ss), (ep, en, ee, es) in zip(itered, vals):
-            assert sp.qb64 == ep.qb64
-            assert sn.num == en.num
-            assert se.qb64 == ee.qb64
-            assert ss.raw == es.raw
-
-        # Remove individual tuples
-        for quad in vals:
-            assert db.vrcs.rem(key, quad) == True
-
-        assert db.vrcs.get(key) == []
-        assert db.vrcs.cnt(key) == 0
+        assert db.vrcs.rem(allkeys) == True
 
 
-        # Unverified Validator (transferable) Receipt Escrows
+        ## Validator (transferable) Receipts old vrcs form
+        ## test .vrcs sub db methods dgkey
+        #key = dgKey(preb, digb)
+        #assert key == f'{preb.decode("utf-8")}.{digb.decode("utf-8")}'.encode("utf-8")
+
+        #p1 = Prefixer(qb64="BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")  # fake prefix
+        #n1 = Number(num=1)
+        #e1 = Diger(ser=b"est1")    # digest of est event
+        #s1 = Siger(raw=b"\x00" * 64)  # 64‑byte fake signature
+
+        #cesrVal = (p1, n1, e1, s1)
+        #cesrVals = [cesrVal]
+
+        #assert db.vrcs.get(key) == []
+        #assert db.vrcs.cnt(key) == 0
+        #assert db.vrcs.rem(key) == False
+
+        #assert db.vrcs.put(key, cesrVals) is True
+
+        #stored = db.vrcs.get(key)
+        #assert len(stored) == 1
+        #sp1, sn1, se1, ss1 = stored[0]
+
+        #assert sp1.qb64 == p1.qb64
+        #assert sn1.num == n1.num
+        #assert se1.qb64 == e1.qb64
+        #assert ss1.raw == s1.raw
+
+        #assert db.vrcs.rem(key) == True
+
+        ## # dup vals are lexocographic
+        ## Build several distinct typed CESR quadruples
+        #pA = Prefixer(qb64="BAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
+        #pB = Prefixer(qb64="BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB")
+        #pC = Prefixer(qb64="BCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC")
+        #pD = Prefixer(qb64="BDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD")
+
+        #nA = Number(num=1)
+        #nB = Number(num=2)
+        #nC = Number(num=3)
+        #nD = Number(num=4)
+
+        #eA = Diger(ser=b"estA")
+        #eB = Diger(ser=b"estB")
+        #eC = Diger(ser=b"estC")
+        #eD = Diger(ser=b"estD")
+
+        #sA = Siger(raw=b"\x00" * 64)
+        #sB = Siger(raw=b"\x01" * 64)
+        #sC = Siger(raw=b"\x02" * 64)
+        #sD = Siger(raw=b"\x03" * 64)
+
+        #quadA = (pA, nA, eA, sA)
+        #quadB = (pB, nB, eB, sB)
+        #quadC = (pC, nC, eC, sC)
+        #quadD = (pD, nD, eD, sD)
+
+        #vals = [quadD, quadB, quadC, quadA]   # intentionally out of order
+
+        ## Initially empty
+        #assert db.vrcs.get(key) == []
+        #assert db.vrcs.cnt(key) == 0
+
+        ## Insert multiple typed tuples
+        #assert db.vrcs.put(key, vals) is True
+
+        ## Insertion order is preserved
+        #stored = db.vrcs.get(key)
+        #assert len(stored) == len(vals)
+        #for (sp, sn, se, ss), (ep, en, ee, es) in zip(stored, vals):
+            #assert sp.qb64 == ep.qb64
+            #assert sn.num == en.num
+            #assert se.qb64 == ee.qb64
+            #assert ss.raw == es.raw
+
+        #assert db.vrcs.cnt(key) == 4
+
+        ## Duplicate insertion should not add new entries
+        #assert db.vrcs.put(key, [quadA]) == False
+        #assert db.vrcs.put(key, [quadB]) == False   # quadB already present → no change
+        #assert db.vrcs.put(key, [quadD]) == False   # quadD already present → no change
+        #assert db.vrcs.put(key, [quadC]) == False   # quadC already present → no change
+
+        ## Iteration returns the same tuples in insertion order
+        #itered = list(db.vrcs.getIter(key))
+        #for (sp, sn, se, ss), (ep, en, ee, es) in zip(itered, vals):
+            #assert sp.qb64 == ep.qb64
+            #assert sn.num == en.num
+            #assert se.qb64 == ee.qb64
+            #assert ss.raw == es.raw
+
+        ## Remove individual tuples
+        #for quad in vals:
+            #assert db.vrcs.rem(key, quad) == True
+
+        #assert db.vrcs.get(key) == []
+        #assert db.vrcs.cnt(key) == 0
+
+
+
+        # Unverified Validator (transferable) Receipt Escrows vres
         # test .vres insertion order dup methods.  dup vals are insertion order
         key = b'A'
         vals = [b"z", b"m", b"x", b"a"]
@@ -851,14 +893,14 @@ def test_baser():
         s1 = Siger(raw=b"\x00" * 64)  # 64‑byte fake signature
 
         cesrVal = (d1, p1, n1, e1, s1)
-        cesrVal = [cesrVal]
+        cesrVals = [cesrVal]
 
         assert db.vres.get(key) == []
         assert db.vres.getLast(keys=key) == None
         assert db.vres.cnt(key) == 0
         assert db.vres.rem(key) == False
 
-        assert db.vres.put(keys=key, vals=cesrVal) is True
+        assert db.vres.put(keys=key, vals=cesrVals) is True
 
         stored = db.vres.get(key)
         assert len(stored) == 1
@@ -1825,9 +1867,11 @@ def test_clean_baser():
     Test Baser db clean clone method
     """
     name = "nat"
+    version = Vrsn_1_0
     # with openDB(name="nat") as natDB, keeping.openKS(name="nat") as natKS:
     with openHby(name=name, salt=Salter(raw=b'0123456789abcdef').qb64) as hby:  # default is temp=True
-        natHab = hby.makeHab(name=name, isith='2', icount=3)  # default Hab
+        kwa = dict(version=version, kind=Kinds.json)
+        natHab = hby.makeHab(name=name, isith='2', icount=3, **kwa)  # default Hab
         # setup Nat's habitat using default salt multisig already incepts
         #natHab = habbing.Habitat(name='nat', ks=natKS, db=natDB,
                                 #isith='2', icount=3, temp=True)
@@ -1842,12 +1886,12 @@ def test_clean_baser():
         path = natHab.db.path  # save for later
 
         # Create series of events for Nat
-        natHab.interact()
-        natHab.rotate()
-        natHab.interact()
-        natHab.interact()
-        natHab.interact()
-        natHab.interact()
+        natHab.interact(framed=True, **kwa)
+        natHab.rotate(framed=True, **kwa)
+        natHab.interact(framed=True, **kwa)
+        natHab.interact(framed=True, **kwa)
+        natHab.interact(framed=True, **kwa)
+        natHab.interact(framed=True, **kwa)
 
         assert natHab.kever.sn == 6
         assert natHab.kever.fn == 6
@@ -1883,7 +1927,8 @@ def test_clean_baser():
                              dig=natHab.kever.serder.said,
                              sn=natHab.kever.sn+1,
                              isith='2',
-                             ndigs=[diger.qb64 for diger in natHab.kever.ndigers])
+                             ndigs=[diger.qb64 for diger in natHab.kever.ndigers],
+                             **kwa)
             fn, dts = natHab.kever.logEvent(serder=badsrdr, first=True)
             natHab.db.states.pin(keys=natHab.pre,
                                  val=datify(KeyStateRecord,
@@ -1907,7 +1952,7 @@ def test_clean_baser():
         # Nat's kever and the signatory kever
         assert len(natHab.kevers) == 2
         # now clean it
-        natHab.db.clean()
+        natHab.db.clean(version=version)
 
         # see if kevers dict is back to what it was before
         assert natHab.kever.sn == 6
@@ -1952,7 +1997,7 @@ def test_fetchkeldel():
     preb = 'BWzwEHHzq7K0gzQPYGGwTmuupUhPx5_yZ-Wk1x4ejhcc'.encode("utf-8")
     digb = 'EGAPkzNZMtX-QiVgbRbyAIZGoXvbGv9IPb0foWTZvI_4'.encode("utf-8")
     sn = 3
-    vs = versify(kind=Kinds.json, size=20)
+    vs = versify(pvrsn=Vrsn_1_0, kind=Kinds.json, size=20)
     assert vs == 'KERI10JSON000014_'
 
     ked = dict(vs=vs, pre=preb.decode("utf-8"),
@@ -2048,6 +2093,8 @@ def test_usebaser():
     """
     Test using Baser
     """
+    kwa = dict(version=Vrsn_1_0, kind=Kinds.json)
+
     raw = b'g\x15\x89\x1a@\xa4\xa47\x07\xb9Q\xb8\x18\xcdJW'
     salter = Salter(raw=raw)
 
@@ -2065,7 +2112,7 @@ def test_usebaser():
         serder = incept(keys=keys,
                         code=code,
                         isith=sith,
-                        ndigs=[Diger(ser=key).qb64 for key in nxtkeys])
+                        ndigs=[Diger(ser=key).qb64 for key in nxtkeys], **kwa)
 
 
         # sign serialization
@@ -2081,7 +2128,7 @@ def test_usebaser():
                         isith=sith,
                         dig=kever.serder.said,
                         ndigs=[Diger(ser=key).qb64 for key in nxtkeys],
-                        sn=1)
+                        sn=1, **kwa)
 
         # sign serialization
         sigers = [signers[i].sign(serder.raw, index=i-count) for i in range(count, count+count)]
@@ -2092,7 +2139,7 @@ def test_usebaser():
         # Event 2 Interaction
         serder = interact(pre=kever.prefixer.qb64,
                           dig=kever.serder.said,
-                          sn=2)
+                          sn=2, **kwa)
 
         # sign serialization  (keys don't change for signing)
         sigers = [signers[i].sign(serder.raw, index=i-count) for i in range(count, count+count)]
@@ -2241,6 +2288,8 @@ def test_statedict():
     """
     Test custom statedict subclass of dict
     """
+    kwa = dict(version=Vrsn_1_0, kind=Kinds.json)
+
     dbd = statedict(a=1, b=2, c=3)  # init in memory so never acesses db
     assert dbd.db == None
     assert 'a' in dbd
@@ -2281,7 +2330,7 @@ def test_statedict():
 
         assert pre not in dbd
         dig = 'EAskHI462CuIMS_gNkcl_QewzrRSKH2p9zHQIO132Z30'
-        serder = interact(pre=pre, dig=dig, sn=4)
+        serder = interact(pre=pre, dig=dig, sn=4, **kwa)
 
         eevt = StateEstEvent(s='3', d=dig, br=[], ba=[])
 
@@ -2293,6 +2342,8 @@ def test_statedict():
                            eilk=Ilks.ixn,
                            keys=[pre],
                            eevt=eevt,
+                           version=Vrsn_1_0,
+                           kind=Kinds.json,
                            )
 
         db.evts.put(keys=(pre, serder.said), val=serder)
@@ -2396,7 +2447,7 @@ def test_baserdoer():
 
 
 def test_group_members():
-    with openMultiSig(prefix="test") as ((hby1, ghab1), (hby2, ghab2), (hby3, ghab3)):
+    with openMultiSig(prefix="test", version=Vrsn_1_0, kind=Kinds.json) as ((hby1, ghab1), (hby2, ghab2), (hby3, ghab3)):
         keys = hby1.db.signingMembers(pre=ghab1.pre)
         assert len(keys) == 3
         assert ghab1.mhab.pre in keys
@@ -2710,7 +2761,7 @@ def test_semver_dev_tag_comparison():
     correctly in migrate(), current, and complete().
     """
     import semver
-    from keri.db.basebasing import _strip_prerelease
+    from keri.db.basing import _strip_prerelease
 
     # Core bug: dev4 should be LESS than dev10, but semver says otherwise
     assert semver.compare("1.2.0-dev4", "1.2.0-dev10") == 1  # broken by design

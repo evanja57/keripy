@@ -6,6 +6,7 @@ keri.kli.common.oobiing module
 import datetime
 import json
 import logging
+import sys
 from collections import namedtuple
 from urllib import parse
 from urllib.parse import urlparse
@@ -13,16 +14,31 @@ from urllib.parse import urlparse
 from hio.base import doing
 from hio.help import decking, ogler
 
+IS_PYODIDE = "emscripten" in sys.platform
+
+if not IS_PYODIDE:
+    import falcon
+    from .httping import Clienter,CESR_CONTENT_TYPE
 from .organizing import Organizer
-from .. import (Vrsn_1_0, Roles, Schemes, Ilks,
+from .. import (Vrsn_2_0, Version, Roles, Schemes, Ilks, Kinds,
                 ValidationError, UnverifiedReplyError,
                 ConfigurationError)
-from ..kering import OOBI_RE, DOOBI_RE, WOOBI_RE, OOBI_AID_HEADER
 from ..help import nowIso8601, fromIso8601, toIso8601, nowUTC
 from ..core import (Prefixer, Router, Revery, Kevery,
-                    Parser, Schemer, SerderKERI)
-from ..peer import exchange
+                    Parser, Schemer, SerderKERI, exchange)
 from ..recording import OobiRecord, WellKnownAuthN
+
+if IS_PYODIDE:
+    import re
+
+    OOBI_RE = re.compile('\\A/oobi/(?P<cid>[^/]+)/(?P<role>[^/]+)(?:/(?P<eid>[^/]+))?\\Z',
+                         re.IGNORECASE)
+    DOOBI_RE = re.compile('\\A/oobi/(?P<said>[^/]+)\\Z', re.IGNORECASE)
+    WOOBI_RE = re.compile('\\A/.well-known/keri/oobi/(?P<cid>[^/]+)\\Z')
+    OOBI_AID_HEADER = "KERI-AID"
+    CESR_CONTENT_TYPE = "application/cesr"
+else:
+    from ..end import OOBI_RE, DOOBI_RE, WOOBI_RE, OOBI_AID_HEADER
 
 logger = ogler.getLogger()
 
@@ -101,7 +117,6 @@ class OobiResource:
                             description: Key state information for current identifiers
                             type: object
         """
-        import falcon
 
         hab = self.hby.habByName(alias)
         if hab is None:
@@ -181,8 +196,6 @@ class OobiResource:
                   description: OOBI resolution to key state successful
 
         """
-        import falcon
-
         body = req.get_media()
 
         if "url" in body:
@@ -257,16 +270,55 @@ class OobiRequestHandler:
         self.notifier.add(attrs=data)
 
 
-def oobiRequestExn(hab, dest, oobi):
+def oobiRequestExn(hab, dest, oobi, version=Version, pvrsn=None, gvrsn=Version,
+                   framed=True, nested=False, genusify=False):
+    """Create oobi request exn and attachments
+
+    Parameters::
+        dest
+        oobi
+        version (Versionage): KERI protocol default version if psvrsn is None
+        pvrsn (Versionage): KERI protocol version
+        gvrsn (Versionage): CESR Genus version for attachment group codes or
+                        nesting group code (useful when serder.gvrsn < 2)
+                        gvrsn = max(svrsn, gvrsn) where svrsn = serder.gvrsn
+                            if serder.gvrsn else serder.pvrsn
+        framed (bool): True means may assume each message plus its attachments
+                                is isolated as frame when parsing so do not need
+                                attachment group when messagizing
+                           False means may not assume eash message plus its attachments
+                                is isolated as frame when parsing so do need
+                                attachment group when messagizing
+        nested (bool): True means messagize for non-top level
+                            This forces non-native serializion to be embedded
+                            in non-native group code
+                       False means messagize for top level of stream.
+                            This allows bare non-native serialization of message
+        genusify (bool): True means prepend genus version code from gvrsn before
+                        serder to override default stream genus version
+                     False means do nothing
+
+    """
+
     data = dict(
         dest=dest,
         oobi=oobi
     )
 
+    pvrsn = pvrsn if pvrsn is not None else version
+    kind = Kinds.cesr if pvrsn.major >= Vrsn_2_0.major else Kinds.json
+
     # Create `exn` peer to peer message to notify other participants UI
-    exn, _ = exchange(route=OobiRequestHandler.resource, modifiers=dict(),
-                                 payload=data, sender=hab.pre)
-    ims = hab.endorse(serder=exn, last=False, pipelined=False)
+    exn = exchange(sender=hab.pre,
+                      route=OobiRequestHandler.resource,
+                      modifiers=dict(),
+                      attributes=data,
+                      version=version,
+                      pvrsn=pvrsn,
+                      gvrsn=gvrsn,
+                      kind=kind)
+    ims = hab.endorse(serder=exn, last=False, gvrsn=gvrsn, framed=framed,
+                      nested=nested, genusify=genusify)
     del ims[:exn.size]
 
     return exn, ims
@@ -279,7 +331,7 @@ class Oobiery:
 
     RetryDelay = 30
 
-    def __init__(self, hby, rvy=None, clienter=None, cues=None):
+    def __init__(self, hby, rvy=None, clienter=None, cues=None, version=None):
         """  DoDoer to handle the request and parsing of OOBIs
 
         Parameters:
@@ -293,19 +345,16 @@ class Oobiery:
         if self.rvy is not None:
             self.registerReplyRoutes(self.rvy.rtr)
 
-        if clienter is None:
-            from .httping import Clienter
-
-            clienter = Clienter()
-        self.clienter = clienter
+        self.clienter = clienter or Clienter()
         self.org = Organizer(hby=self.hby)
+        self.version = version if version is not None else self.hby.version
 
         # Set up a local parser for returned events from OOBI queries.
         rtr = Router()
         rvy = Revery(db=self.hby.db, rtr=rtr)
         kvy = Kevery(db=self.hby.db, lax=True, local=False, rvy=rvy)
         kvy.registerReplyRoutes(router=rtr)
-        self.parser = Parser(framed=True, kvy=kvy, rvy=rvy, version=Vrsn_1_0)
+        self.parser = Parser(framed=True, kvy=kvy, rvy=rvy, version=self.version)
 
         self.cues = cues if cues is not None else decking.Deck()
         self.clients = dict()
@@ -507,7 +556,7 @@ class Oobiery:
                     self.hby.db.roobi.put(keys=(url,), val=obr)
 
                 elif response["headers"]["Content-Type"] in (
-                    "application/cesr",
+                    CESR_CONTENT_TYPE,
                     "application/json+cesr",
                     "application/cesr+json",
                 ):  # CESR Stream response to OOBI (canonical + legacy variants)
@@ -658,11 +707,7 @@ class Authenticator:
             clienter (Clienter): DoDoer client provider responsible for managing HTTP client requests
         """
         self.hby = hby
-        if clienter is None:
-            from .httping import Clienter
-
-            clienter = Clienter()
-        self.clienter = clienter
+        self.clienter = clienter if clienter is not None else Clienter()
         self.clients = dict()
         self.doers = [self.clienter, doing.doify(self.authzDo)]
 

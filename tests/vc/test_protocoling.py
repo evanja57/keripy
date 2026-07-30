@@ -3,8 +3,9 @@
 tests.vc.protocoling module
 
 """
+import pytest
 
-from keri import Vrsn_1_0
+from keri.kering import Vrsn_2_0, Vrsn_1_0, Kinds
 from keri.core import (Salter, Counter, SealEvent, Seqner,
                        Diger, Prefixer, Saider, Parser,
                        Saids, MtrDex, Codens)
@@ -18,6 +19,46 @@ from keri.vdr import Regery, Verifier
 from keri.app import Notifier, openHby
 
 
+
+def test_ipex_version_overrides():
+    with openHby(name="sid", base="test", salt=Salter(raw=b'0123456789abcdef').qb64,
+                 version=Vrsn_1_0) as sidHby:
+        sidHab = sidHby.makeHab(name="test", version=Vrsn_1_0, kind=Kinds.json)
+
+        apply_v1, _ = ipexApplyExn(sidHab, recp=sidHab.pre, message="Please", schema="schema", attrs={})
+        assert apply_v1.pvrsn == Vrsn_1_0
+        assert "rp" in apply_v1.ked
+        assert "ri" not in apply_v1.ked
+
+        apply_v2, _ = ipexApplyExn(sidHab, recp=sidHab.pre, message="Please", schema="schema", attrs={},
+                                   version=Vrsn_2_0)
+        assert apply_v2.pvrsn == Vrsn_2_0
+        assert "ri" in apply_v2.ked
+        assert "rp" not in apply_v2.ked
+
+        spurn_v2, _ = ipexSpurnExn(sidHab, "No thanks", spurned=apply_v2, version=Vrsn_2_0)
+        assert spurn_v2.pvrsn == Vrsn_2_0
+        assert "ri" in spurn_v2.ked
+        assert "rp" not in spurn_v2.ked
+
+        with pytest.raises(ValueError, match="version and pvrsn must match"):
+            ipexApplyExn(sidHab, recp=sidHab.pre, message="Please", schema="schema", attrs={},
+                         version=Vrsn_2_0, pvrsn=Vrsn_1_0)
+
+
+def test_ipex_embedded_helpers_reject_v2_override():
+    with openHby(name="sid", base="test", salt=Salter(raw=b'0123456789abcdef').qb64,
+                 version=Vrsn_1_0) as sidHby:
+        sidHab = sidHby.makeHab(name="test", version=Vrsn_1_0, kind=Kinds.json)
+
+        with pytest.raises(ValueError, match="not supported in version 2 exchange"):
+            ipexOfferExn(sidHab, "How about this", acdc=b"", version=Vrsn_2_0)
+
+        with pytest.raises(ValueError, match="not supported in version 2 exchange"):
+            ipexGrantExn(sidHab, recp=sidHab.pre, message="Here's a credential", acdc=b"",
+                         version=Vrsn_2_0)
+
+
 def test_ipex(seeder, mockCoringRandomNonce, mockHelpingNowIso8601, mockHelpingNowUTC):
     """ Test IPEX exchange protocol """
 
@@ -28,16 +69,16 @@ def test_ipex(seeder, mockCoringRandomNonce, mockHelpingNowIso8601, mockHelpingN
 
     default_salt = Salter(raw=b'0123456789abcdef').qb64
 
-    with (openHby(name="red", base="test", salt=default_salt) as redHby,
-          openHby(name="sid", base="test", salt=sidSalt) as sidHby):
+    with (openHby(name="red", base="test", salt=default_salt, version=Vrsn_1_0) as redHby,
+          openHby(name="sid", base="test", salt=sidSalt, version=Vrsn_1_0) as sidHby):
         seeder.seedSchema(redHby.db)
         seeder.seedSchema(sidHby.db)
 
-        sidHab = sidHby.makeHab(name="test")
+        sidHab = sidHby.makeHab(name="test", version=Vrsn_1_0, kind=Kinds.json)
         sidPre = sidHab.pre
         assert sidPre == "EMl4RhuR_JxpiMd1N8DEJEhTxM3Ovvn9Xya8AN-tiUbl"
 
-        redHab = redHby.makeHab(name="test")
+        redHab = redHby.makeHab(name="test", version=Vrsn_1_0, kind=Kinds.json)
         redPre = redHab.pre
         assert redPre == "EMl4RhuR_JxpiMd1N8DEJEhTxM3Ovvn9Xya8AN-tiUbl"
 
@@ -45,9 +86,9 @@ def test_ipex(seeder, mockCoringRandomNonce, mockHelpingNowIso8601, mockHelpingN
         sidVer = Verifier(hby=sidHby, reger=sidRgy.reger)
 
         notifier = Notifier(hby=sidHby)
-        issuer = sidRgy.makeRegistry(prefix=sidHab.pre, name="sid")
+        issuer = sidRgy.makeRegistry(prefix=sidHab.pre, name="sid", version=Vrsn_1_0, kind=Kinds.json)
         rseal = SealEvent(issuer.regk, "0", issuer.regd)._asdict()
-        sidHab.interact(data=[rseal])
+        sidHab.interact(data=[rseal], framed=True, version=Vrsn_1_0, kind=Kinds.json, gvrsn=Vrsn_1_0)
         seqner = Seqner(sn=sidHab.kever.sn)
         issuer.anchorMsg(pre=issuer.regk,
                          regd=issuer.regd,
@@ -72,7 +113,8 @@ def test_ipex(seeder, mockCoringRandomNonce, mockHelpingNowIso8601, mockHelpingN
         creder = credential(issuer=sidHab.pre,
                             schema=schema,
                             data=d,
-                            status=issuer.regk)
+                            status=issuer.regk,
+                            version=Vrsn_1_0, kind=Kinds.json)
 
         assert creder.said == "EElymNmgs1u0mSaoCeOtSsNOROLuqOz103V3-4E-ClXH"
 
@@ -82,7 +124,7 @@ def test_ipex(seeder, mockCoringRandomNonce, mockHelpingNowIso8601, mockHelpingN
                            b'B-u4VAF7A7_GR8PXJoAVHv5X9vjtXew8Yo6Z3w9mQUQ","dt":"2021-06-27T21:26:21.23325'
                            b'7+00:00"}')
         rseal = SealEvent(iss.pre, "0", iss.said)._asdict()
-        sidHab.interact(data=[rseal])
+        sidHab.interact(data=[rseal], framed=True, version=Vrsn_1_0, kind=Kinds.json, gvrsn=Vrsn_1_0)
         seqner = Seqner(sn=sidHab.kever.sn)
         issuer.anchorMsg(pre=iss.pre,
                          regd=iss.said,
@@ -216,7 +258,7 @@ def test_ipex(seeder, mockCoringRandomNonce, mockHelpingNowIso8601, mockHelpingN
         assert serder.ked == agree.ked
 
         # First try a bare grant (no prior agree)
-        anc = sidHab.makeOwnEvent(sn=2)
+        anc = sidHab.msgOwnEvent(sn=2, framed=True, gvrsn=Vrsn_1_0)
         grant0, grant0atc = ipexGrantExn(sidHab, message="Here's a credential", recp=sidHab.pre,
                                                      acdc=msg, iss=iss.raw, anc=anc)
         assert grant0.raw == (b'{"v":"KERI10JSON000539_","t":"exn","d":"ELnjKvzdgO57JZwG3giIScoOeTB0rLuevniv'

@@ -16,10 +16,9 @@ from hio.base import doing
 from hio.help import ogler
 
 from keri import __version__
-from .basebasing import BaserBase, statedict
 from .dbing import LMDBer, dgKey, openLMDB
-from ..kering import (MissingEntryError, DatabaseError,
-                      ConfigurationError, ValidationError,
+from ..kering import (MissingEntryError, DatabaseError, SerializeError,
+                      ConfigurationError, ValidationError, Version,
                       Vrsn_1_0, Vrsn_2_0)
 from ..recording import (KeyStateRecord, EventSourceRecord,
                          HabitatRecord, TopicsRecord,
@@ -32,6 +31,23 @@ from ..recording import (KeyStateRecord, EventSourceRecord,
 logger = ogler.getLogger()
 
 
+def _strip_prerelease(version_str):
+    """Strip prerelease and build metadata from a semver string.
+
+    Semver compares alphanumeric prerelease identifiers lexicographically,
+    so 'dev4' > 'dev10' (because '4' > '1'). Stripping prerelease ensures
+    dev releases within the same version cycle compare as equal.
+    See: https://github.com/WebOfTrust/keripy/issues/820
+    """
+    ver = semver.VersionInfo.parse(version_str)
+    return str(semver.Version(ver.major, ver.minor, ver.patch))
+
+
+MIGRATIONS = [
+    ("0.6.8", ["hab_data_rename"]),
+    ("1.0.0", ["add_key_and_reg_state_schemas"]),
+    ("1.2.0", ["rekey_habs"])
+]
 
 
 # ToDo XXXX maybe
@@ -54,6 +70,61 @@ class komerdict(dict):
     """
 
 '''
+
+
+class statedict(dict):
+    """
+    Subclass of dict that has db as attribute and employs read through cache
+    from db Baser.stts of kever states to reload kever from state in database
+    when not found in memory as dict item.
+    """
+    __slots__ = ('db')  # no .__dict__ just for db reference
+
+    def __init__(self, *pa, **kwa):
+        super(statedict, self).__init__(*pa, **kwa)
+        self.db = None
+
+    def __getitem__(self, k):
+        try:
+            return super(statedict, self).__getitem__(k)
+        except KeyError as ex:
+            if not self.db:
+                raise ex  # reraise KeyError
+            if (ksr := self.db.states.get(keys=k)) is None:
+                raise ex  # reraise KeyError
+            try:
+                from ..core.eventing import Kever
+                kever = Kever(state=ksr, db=self.db)
+            except MissingEntryError:  # no kel event for keystate
+                raise ex  # reraise KeyError
+            self.__setitem__(k, kever)
+            return kever
+
+    def __contains__(self, k):
+        if not super(statedict, self).__contains__(k):
+            try:
+                self.__getitem__(k)
+                return True
+            except KeyError:
+                return False
+        else:
+            return True
+
+    def get(self, k, default=None):
+        """Override of dict get method
+
+        Parameters:
+            k (str): key for dict
+            default: default value to return if not found
+
+        Returns:
+            kever: converted from underlying dict or database
+
+        """
+        if not super(statedict, self).__contains__(k):
+            return default
+        else:
+            return self.__getitem__(k)
 
 
 def openDB(*, cls=None, name="test", **kwa):
@@ -92,15 +163,13 @@ def reopenDB(db, clear=False, **kwa):
 KERIBaserMapSizeKey = "KERI_BASER_MAP_SIZE"
 
 
-class Baser(BaserBase,LMDBer ):
+class Baser(LMDBer):
     """
     Baser sets up named sub databases with Keri Event Logs within main database
 
     Attributes:
         see superclass LMDBer for inherited attributes
 
-        kevers (dbdict): read-through cache of Kever instances indexed by
-            identifier prefix qb64
         prefixes (OrderedSet): local prefixes corresponding to habitats for
             this db
         groups (OrderedSet): group hab identifier prefixes for this db
@@ -183,15 +252,23 @@ class Baser(BaserBase,LMDBer ):
             snKey (prefix + sequence number)
             More than one value per DB key is allowed.
 
-        .vrcs is named subDB instance of CatCesrIoSetSuber
-            (klas=(Prefixer, Number, Diger, Siger)) for verified transferable-
-            validator receipt quadruples. Each stored value is a typed CESR
-            tuple (Prefixer, Number, Diger, Siger) representing a validator's
-            AID, its latest establishment-event sequence number, digest, and
-            its indexed signature over the event. Values preserved in insertion
-            order. Represents fully validated receipts moved out of escrow.
+        .vrcs is named subDB instance of CesrIoSetSuber (klas=Siger))
+            for verified transferable receiptor/validator receipt signatures.
+            Represents fully validated receipts.
+            Each stored value in ioset is returned as a typed CESR Siger.
+            The receiptor (validator not the controller) is denoted in
+            the key space for the vrcs entry. This is provided by the last three
+            elements of the key space tuple representing a receiptor's
+            AID, its latest establishment-event sequence number, and  digest.
+            The value is a set of its indexed signatures over the event.
+            Values are preserved in insertion order.
             subkey 'vrcs.'
-            dgKey (prefix + digest)
+            dgKey (epre + esaid + rpre, resn, resaid, )
+                epre is controller of receipted event
+                esaid is recepted event pre
+                rpre is receiptor pre
+                resn is receiptor est evt sn
+                resaid is receptor est evt said
             Multiple values per key stored as ordered set.
 
         .vres is named subDB instance of CatCesrIoSetSuber for escrowed
@@ -361,13 +438,13 @@ class Baser(BaserBase,LMDBer ):
             Key: said (bytes) of SAD.
             Only one value per DB key is allowed.
 
-        .ssgs is named subDB instance of CesrIoSetSuber (klas=Siger) for SAD
+        .tsgs is named subDB instance of CesrIoSetSuber (klas=Siger) for SAD
             transferable indexed signatures. Maps quadruple key
             (diger.qb64, prefixer.qb64, number.qb64, diger.qb64) to Siger
             of the transferable signer's signature. Diger is the SAID of the
             SAD; prefixer, number, and diger indicate the key state
             establishment event for the signer.
-            subkey 'ssgs.'
+            subkey 'tsgs.'
             Key: join(diger.qb64b, prefixer.qb64b, number.qb64b, diger.qb64b)
             Multiple values per key (one per signer, insertion ordered).
 
@@ -382,7 +459,7 @@ class Baser(BaserBase,LMDBer ):
 
         .rpys is named subDB instance of SerderSuber for reply messages. Maps
             reply SAID to serialization of the reply message (versioned SAD).
-            Use .sdts, .ssgs, and .scgs for associated datetimes and
+            Use .sdts, .tsgs, and .scgs for associated datetimes and
             signatures.
             subkey 'rpys.'
             Key: said bytes.
@@ -795,7 +872,13 @@ class Baser(BaserBase,LMDBer ):
                 If not provided use default .HeadDirpath
             mode is int numeric os dir permissions for database directory
             reopen (bool): True means database will be reopened by this init
+
+
         """
+        self.prefixes = oset()  # should change to hids for hab ids
+        self.groups = oset()  # group hab ids
+        self._kevers = statedict()
+        self._kevers.db = self  # assign db for read through cache of kevers
 
         if (mapSize := os.getenv(KERIBaserMapSizeKey)) is not None:
             try:
@@ -804,9 +887,14 @@ class Baser(BaserBase,LMDBer ):
                 logger.error("KERI_BASER_MAP_SIZE must be an integer value >1!")
                 raise
 
-        BaserBase.__init__(self)
-        LMDBer.__init__(self, headDirPath=headDirPath, reopen=reopen, **kwa)
+        super(Baser, self).__init__(headDirPath=headDirPath, reopen=reopen, **kwa)
 
+    @property
+    def kevers(self):
+        """
+        Returns .db.kevers
+        """
+        return self._kevers
 
     def reopen(self, **kwa):
         """
@@ -845,11 +933,18 @@ class Baser(BaserBase,LMDBer ):
         self.rcts = subing.CatCesrIoSetSuber(db=self, subkey="rcts.",
                                              klas=(coring.Prefixer, coring.Cigar))
         self.ures = subing.CatCesrIoSetSuber(db=self, subkey='ures.',
-                                             klas=(coring.Diger, coring.Prefixer, coring.Cigar))
-        self.vrcs = subing.CatCesrIoSetSuber(db=self, subkey='vrcs.',
-                             klas=(coring.Prefixer, coring.Number, coring.Diger, indexing.Siger))
+                                             klas=(coring.Diger,
+                                                   coring.Prefixer,
+                                                   coring.Cigar))
+        self.vrcs = subing.CesrIoSetSuber(db=self,
+                                          subkey='vrcs.',
+                                          klas=indexing.Siger)
         self.vres = subing.CatCesrIoSetSuber(db=self, subkey='vres.',
-                             klas=(coring.Diger, coring.Prefixer, coring.Number, coring.Diger, indexing.Siger))
+                             klas=(coring.Diger,
+                                   coring.Prefixer,
+                                   coring.Number,
+                                   coring.Diger,
+                                   indexing.Siger))
         self.pses = subing.OnIoDupSuber(db=self, subkey='pses.')
         self.pwes = subing.OnIoDupSuber(db=self, subkey='pwes.')
         self.pdes = subing.OnIoDupSuber(db=self, subkey='pdes.')
@@ -896,11 +991,11 @@ class Baser(BaserBase,LMDBer ):
         # all sad  sdts (sad datetime serializations) maps said to date-time
         self.sdts = subing.CesrSuber(db=self, subkey='sdts.', klas=coring.Dater)
 
-        # all sad ssgs (sad indexed signature serializations) maps SAD quadkeys
+        # all sad tsgs (sad indexed signature serializations) maps SAD quadkeys
         # given by quadruple (diger.qb64, prefixer.qb64, seqner.q64, diger.qb64)
         #  of reply and trans signer's key state est evt to val Siger for each
         # signature.
-        self.ssgs = subing.CesrIoSetSuber(db=self, subkey='ssgs.', klas=indexing.Siger)
+        self.tsgs = subing.CesrIoSetSuber(db=self, subkey='tsgs.', klas=indexing.Siger)
 
         # all sad scgs  (sad non-indexed signature serializations) maps SAD SAID
         # to couple (Verfer, Cigar) of nontrans signer of signature in Cigar
@@ -910,7 +1005,7 @@ class Baser(BaserBase,LMDBer ):
 
         # all reply messages. Maps reply said to serialization. Replys are
         # versioned sads ( with version string) so use Serder to deserialize and
-        # use  .sdts, .ssgs, and .scgs for datetimes and signatures
+        # use  .sdts, .tsgs, and .scgs for datetimes and signatures
         # TODO: clean
         self.rpys = subing.SerderSuber(db=self, subkey='rpys.')
 
@@ -1230,6 +1325,7 @@ class Baser(BaserBase,LMDBer ):
 
         return self.env
 
+
     def reload(self):
         """
         Reload stored prefixes and Kevers from .habs
@@ -1261,7 +1357,160 @@ class Baser(BaserBase,LMDBer ):
         for keys in removes:  # remove bare .habs records
             self.habs.rem(keys=keys)
 
-    def clean(self):
+    def migrate(self):
+        """ Run all migrations required
+
+        Run all migrations  that are required from the current version of database up to the current version
+         of the software that have not already been run.
+
+         Sets the version of the database to the current version of the software after successful completion
+         of required migrations
+
+        """
+        from ..core import coring
+
+        escrows_cleared = False
+
+        for (version, migrations) in MIGRATIONS:
+            # Only run migration if current source code version is at or below the migration version
+            ver = semver.VersionInfo.parse(__version__)
+            ver_no_prerelease = semver.Version(ver.major, ver.minor, ver.patch)
+            if self.version is not None and semver.compare(version, str(ver_no_prerelease)) > 0:
+                print(
+                    f"Skipping migration {version} as higher than the current KERI version {__version__}")
+                continue
+            # Skip migrations already run - where version less than (-1) or equal to (0) database version
+            # Strip prerelease from DB version to avoid lexicographic comparison bugs (#820)
+            if self.version is not None and semver.compare(version, _strip_prerelease(self.version)) != 1:
+                continue
+
+            # Clear all escrows before first migration to prevent old key
+            # format crashes (e.g. qnfs keys without insertion-order suffix).
+            # Uses .trim() which bypasses key parsing. See #863.
+            if not escrows_cleared:
+                self._trimAllEscrows()
+                escrows_cleared = True
+
+            print(f"Migrating database v{self.version} --> v{version}")
+            for migration in migrations:
+                modName = f"keri.db.migrations.{migration}"
+                if self.migs.get(keys=(migration,)) is not None:
+                    continue
+
+                mod = importlib.import_module(modName)
+                try:
+                    print(f"running migration {modName}")
+                    mod.migrate(self)
+                except Exception as e:
+                    print(f"\nAbandoning migration {migration} at version {version} with error: {e}")
+                    return
+
+                self.migs.pin(keys=(migration,), val=coring.Dater())
+
+            # update database version after successful migration
+            self.version = version
+
+        self.version = __version__
+
+    def _trimAllEscrows(self):
+        """Trim all escrow databases via low-level .trim().
+
+        Safe for old key formats that would crash higher-level iterators
+        (e.g., qnfs keys without insertion-order suffix from pre-1.2.0).
+        Called at the beginning of migration per spec call guidance.
+        See: https://github.com/WebOfTrust/keripy/issues/863
+        """
+        escrows = [
+            self.ures, self.vres, self.pses, self.pwes, self.ooes,
+            self.qnfs, self.uwes, self.misfits, self.delegables,
+            self.pdes, self.udes, self.rpes, self.ldes, self.epsd,
+            self.eoobi, self.dpub, self.gpwe, self.gdee, self.dpwe,
+            self.gpse, self.epse, self.dune,
+        ]
+        total = 0
+        for escrow in escrows:
+            count = escrow.cnt()
+            if count > 0:
+                escrow.trim()
+                total += count
+        if total > 0:
+            print(f"Cleared {total} escrow entries before migration")
+
+    def clearEscrows(self):
+        """
+        Clear all escrows
+        """
+        for escrow in [self.ures, self.vres, self.pses, self.pwes, self.ooes,
+                       self.qnfs, self.uwes,
+                       self.qnfs, self.misfits, self.delegables, self.pdes,
+                       self.udes, self.rpes, self.ldes, self.epsd, self.eoobi,
+                       self.dpub, self.gpwe, self.gdee, self.dpwe, self.gpse,
+                       self.epse, self.dune]:
+            count = escrow.cntAll()
+            escrow.trim()
+            logger.info(f"KEL: Cleared {count} escrows from ({escrow}")
+
+    @property
+    def current(self):
+        """ Current property determines if we are at the current database migration state.
+
+        If the database version matches the library version return True
+        If the current database version is behind the current library version, check for migrations
+
+           - If there are migrations to run, return False
+           - If there are no migrations to run, reset database version to library version and return True
+
+        If the current database version is ahead of the current library version, raise exception
+
+        """
+        if self.version == __version__:
+            return True
+
+        ver = semver.VersionInfo.parse(__version__)
+        ver_no_prerelease = semver.Version(ver.major, ver.minor, ver.patch)
+        # Strip prerelease from DB version to avoid lexicographic comparison bugs (#820)
+        if self.version is not None and semver.compare(_strip_prerelease(self.version), str(ver_no_prerelease)) == 1:
+            raise ConfigurationError(
+                f"Database version={self.version} is ahead of library version={__version__}")
+
+        last = MIGRATIONS[-1]
+        # If we aren't at latest version, but there are no outstanding migrations,
+        # reset version to latest (rightmost (-1) migration is latest)
+        if self.migs.get(keys=(last[1][-1],)) is not None:
+            return True
+
+        # We have migrations to run
+        return False
+
+    def complete(self, name=None):
+        """ Returns list of tuples of migrations completed with date of completion
+
+        Parameters:
+            name(str): optional name of migration to check completeness
+
+        Returns:
+            list: tuples of migration,date of completed migration names and the date of completion
+
+        """
+        migrations = []
+        if not name:
+            for version, migs in MIGRATIONS:
+                # Print entries only for migrations that have been run
+                # Strip prerelease from DB version to avoid lexicographic comparison bugs (#820)
+                if self.version is not None and semver.compare(version, _strip_prerelease(self.version)) <= 0:
+                    for mig in migs:
+                        dater = self.migs.get(keys=(mig,))
+                        migrations.append((mig, dater))
+        else:
+            for version, migs in MIGRATIONS:  # check all migrations for each version
+                if name not in migs or not self.migs.get(keys=(name,)):
+                    raise ValueError(f"No migration named {name}")
+            migrations.append((name, self.migs.get(keys=(name,))))
+
+        return migrations
+
+
+    def clean(self, gvrsn=Version, *, version=None):
         """
         Clean database by creating re-verified cleaned cloned copy
         and then replacing original with cleaned cloned copy
@@ -1269,8 +1518,15 @@ class Baser(BaserBase,LMDBer ):
         Database usage should be offline during cleaning as it will be cloned in
         readonly mode
 
+        Parameters:
+            gvrsn (Versionage): CESR genus version for clone attachments and parser
+            version (Versionage): legacy alias for gvrsn
+
         """
         from ..core import parsing
+
+        if version is not None:
+            gvrsn = version
 
         # create copy to clone into
         with openDB(name=self.name,
@@ -1291,8 +1547,8 @@ class Baser(BaserBase,LMDBer ):
                 # need new method cloneObjAllPreIter()
                 # process event doesn't capture exceptions so we can more easily
                 # detect in the cloning that some events did not make it through
-                psr = parsing.Parser(kvy=kvy, version=Vrsn_1_0)
-                for msg in self.cloneAllPreIter():  # clone into copy
+                psr = parsing.Parser(kvy=kvy, version=gvrsn)
+                for msg in self.cloneAllPreIter(gvrsn=gvrsn):  # clone into copy
                     psr.parseOne(ims=msg)
 
                 # This is the list of non-set based databases that are not created as part of event processing.
@@ -1386,6 +1642,526 @@ class Baser(BaserBase,LMDBer ):
         # clone success so remove if still there
         if os.path.exists(copy.path):
             shutil.rmtree(copy.path)
+
+
+    def clonePreIter(self, pre, fn=0, gvrsn=Version, *, version=None):
+        """
+        Returns iterator of first seen event messages with attachments for the
+        identifier prefix pre starting at first seen order number, fn.
+        Essentially a replay in first seen order with attachments
+
+        Parameters:
+            pre is bytes of itdentifier prefix
+            fn is int fn to resume replay. Earliset is fn=0
+            gvrsn (Versionage): CESR genus version for attachments
+            version (Versionage): legacy alias for gvrsn
+
+        Returns:
+           msgs (Iterator): over all items with pre starting at fn
+        """
+        #if hasattr(pre, 'encode'):
+            #pre = pre.encode("utf-8")
+
+        if version is not None:
+            gvrsn = version
+        for keys, fn, dig in self.fels.getAllItemIter(keys=pre, on=fn):
+            try:
+                msg = self.cloneEvtMsg(pre=pre, fn=fn, dig=dig, gvrsn=gvrsn)
+            except (MissingEntryError, SerializeError) as ex:
+                continue  # skip this event
+            yield msg
+
+
+    def cloneAllPreIter(self, gvrsn=Version, *, version=None):
+        """
+        Returns iterator of first seen event messages with attachments for all
+        identifier prefixes starting at key. If key == b'' then start at first
+        key in databse. Use key to resume replay.
+        Essentially a replay in first seen order with attachments of entire
+        set of FELs.
+
+        Parameters:
+            gvrsn (Versionage): CESR genus version for attachments
+            version (Versionage): legacy alias for gvrsn
+
+        Returns:
+           msgs (Iterator): over all items in db
+
+        """
+        if version is not None:
+            gvrsn = version
+        for keys, fn, dig in self.fels.getAllItemIter(keys=b'', on=0):
+            pre = keys[0].encode() if isinstance(keys[0], str) else keys[0]
+            try:
+                msg = self.cloneEvtMsg(pre=pre, fn=fn, dig=dig, gvrsn=gvrsn)
+            except (MissingEntryError, SerializeError) as ex:
+                continue  # skip this event
+            yield msg
+
+
+
+    def cloneEvtMsg(self, pre, fn, dig, gvrsn=Version, *, version=None):
+        """
+        Clones Event as Serialized CESR Message with Body and attached Foot
+
+        Parameters:
+            pre (bytes): identifier prefix of event
+            fn (int): first seen number (ordinal) of event
+            dig (bytes): digest of event
+            gvrsn (Versionage): CESR genus version for attachments
+            version (Versionage): legacy alias for gvrsn
+
+        Returns:
+            msg (bytearray): message body with attachments
+        """
+        from ..core import Prefixer, Number, Diger, SealSource, FirstSeen, messagize
+
+        if version is not None:
+            gvrsn = version
+
+        keys = (pre, dig)
+
+        # get serder
+        if not (serder := self.evts.get(keys=keys)):
+            raise MissingEntryError("Missing event for dig={}.".format(dig))
+
+        # get indexed signatures
+        if not (sigers := self.sigs.get(keys=keys)):
+            raise MissingEntryError("Missing sigs for dig={}.".format(dig))
+
+        # get indexed witness signatures if any
+        wigers = self.wigs.get(keys=keys)
+
+        # get nontrans endorsement couples not witnesses
+        # may have been originally key event attachments or receipted endorsements
+        cigars = []
+        if coups := self.rcts.get(keys=keys):
+            for prefixer, cigar in coups:
+                cigar.verfer = prefixer  # assign verfer
+                cigars.append(cigar)
+
+        # get trans receipt/endorsement attachments not controller
+        # vrcsNew get non-controller trans receipt attachments
+        # may have been originally non-controller sigs or receipted endorsements
+        topkeys = (pre, dig)
+        rsets = dict()  # collate  by triple of rpre,rsnh,rdig
+        for quintkeys, siger in self.vrcs.getTopItemIter(keys=topkeys):
+            epre, edig, rpre, rsnh, rdig = quintkeys  # expand quintkeys tuple
+            triple = (rpre, rsnh, rdig)  # create triple of receiptor/endorser
+            if triple not in rsets:
+                rsets[triple] = [siger]
+            else:
+                rsets[triple].append(siger)
+
+        rsgs = []
+        if rsets:  # convert rsets dict to rsgs list of tuples
+            for triple, rigers in rsets.items():
+                rpre, rsnh, rdig = triple
+                rsgs.append((Prefixer(qb64=rpre),
+                             Number(snh=rsnh),
+                             Diger(qb64=rdig),
+                             rigers))
+
+
+        # get authorizer (delegator/issuer) source seal event couple if any
+        bonds = []
+        if couple := self.aess.get(keys=keys):
+            number, diger = couple
+            bonds.append(SealSource(s=number, d=diger))
+
+        # get first seen replay couples
+        if not (dater := self.dtss.get(keys=keys)):
+            raise MissingEntryError("Missing datetime for dig={}.".format(dig))
+
+        bonds.append(FirstSeen(f=Number(num=fn), dt=dater))
+
+
+        msg = messagize(serder=serder, sigers=sigers, wigers=wigers,
+                        cigars=cigars, rsgs=rsgs, bonds=bonds, gvrsn=gvrsn)
+        return msg
+
+
+
+    #def cloneEvtMsgOld(self, pre, fn, dig, version=Vrsn_1_0):
+        #"""
+        #Clones Event as Serialized CESR Message with Body and attached Foot
+
+        #Parameters:
+            #pre (bytes): identifier prefix of event
+            #fn (int): first seen number (ordinal) of event
+            #dig (bytes): digest of event
+            #version (Versionage): CESR Genus version for attachment group codes
+
+
+        #Returns:
+            #bytearray: message body with attachments
+        #"""
+        #from ..core import coring
+        #from ..core.counting import Counter, Codens
+        #from ..core.structing import  SealSource
+
+        #msg = bytearray()  # message
+        #atc = bytearray()  # attachments
+        #dgkey = dgKey(pre, dig)  # get message
+        #if not (serder := self.evts.get(keys=(pre, dig))):
+            #raise MissingEntryError("Missing event for dig={}.".format(dig))
+        #msg.extend(serder.raw)
+
+        ## add indexed signatures to attachments
+        #if not (sigers := self.sigs.get(keys=dgkey)):
+            #raise MissingEntryError("Missing sigs for dig={}.".format(dig))
+        #atc.extend(Counter(code=Codens.ControllerIdxSigs,
+                           #count=len(sigers), version=Vrsn_1_0).qb64b)
+        #for siger in sigers:
+            #atc.extend(siger.qb64b)
+
+        ## add indexed witness signatures to attachments
+        #if wigers := self.wigs.get(keys=dgkey):
+            #atc.extend(Counter(code=Codens.WitnessIdxSigs,
+                               #count=len(wigers), version=Vrsn_1_0).qb64b)
+            #for wiger in wigers:
+                #atc.extend(wiger.qb64b)
+
+        ## add nontrans endorsement couples to attachments not witnesses
+        ## may have been originally key event attachments or receipted endorsements
+        #if coups := self.rcts.get(keys=dgkey):
+            #atc.extend(Counter(code=Codens.NonTransReceiptCouples,
+                               #count=len(coups), version=Vrsn_1_0).qb64b)
+            #for prefixer, cigar in coups:
+                #atc.extend(prefixer.qb64b)
+                #atc.extend(cigar.qb64b)
+
+        ## add trans endorsement attachments not controller
+        ## may have been originally key event attachments or receipted endorsements
+        ## vrcsNew add non-controller trans endorsement attachments
+        ## may have been originally non-controller sigs or receipted endorsements
+        ## collate sigersets by triple of rpre,rsnh,rdig
+        #topkeys = (pre, dig)
+        #sigersets = dict()
+        #for keys, siger in self.vrcs.getTopItemIter(keys=topkeys):
+            #epre, edig, rpre, rsnh, rdig = keys  # expand keys tuple
+            #triple = (rpre, rsnh, rdig)
+            #if triple not in sigersets:
+                #sigersets[triple] = [siger]
+            #else:
+                #sigersets[triple].append(siger)
+
+        ## create and attach an attachment group per sigerset
+        #if sigersets:
+            #cims = bytearray()
+            #for keys, sigers in sigersets.items():
+                #sims = bytearray()
+                #sims.extend(Counter(code=Codens.ControllerIdxSigs,
+                                    #count=len(sigers),
+                                    #version=Vrsn_1_0).qb64b)
+                #for siger in sigers:
+                    #sims.extend(siger.qb64b)
+
+                ##sims = Counter.enclose(qb64=sims,
+                                       ##code=Codens.ControllerIdxSigs,
+                                       ##version=Vrsn_2_0)
+                #rpre, rsnh, rdig = keys
+                #cims.extend(rpre.encode() + coring.Number(snh=rsnh).qb64b + rdig.encode())
+                #cims.extend(sims)
+            #gims = Counter.enclose(qb64=cims,
+                                       #code=Codens.TransReceiptIdxSigGroups,
+                                       #version=Vrsn_1_0)
+            #atc.extend(gims)
+
+
+
+        ## add authorizer (delegator/issuer) source seal event couple to attachments
+        #if (duple := self.aess.get(keys=(pre, dig))) is not None:
+            #number, diger = duple
+            #atc.extend(Counter(code=Codens.SealSourceCouples,
+                               #count=1, version=Vrsn_1_0).qb64b)
+            #atc.extend(number.qb64b + diger.qb64b)
+
+
+        ## add first seen replay couple to attachments
+        #if not (dater := self.dtss.get(keys=dgkey)):
+            #raise MissingEntryError("Missing datetime for dig={}.".format(dig))
+        #atc.extend(Counter(code=Codens.FirstSeenReplayCouples,
+                           #count=1, version=Vrsn_1_0).qb64b)
+        #atc.extend(coring.Number(num=fn).qb64b)  # may not need to be Huge
+        #atc.extend(dater.qb64b)
+
+        ## enclose attachments in AttachmentGroup
+        #if len(atc) % 4:
+            #raise SerializeError("Invalid attachments size={}, nonintegral"
+                             #" quadlets.".format(len(atc)))
+        #pcnt = Counter(code=Codens.AttachmentGroup,
+                       #count=(len(atc) // 4), version=Vrsn_1_0).qb64b
+        #msg.extend(pcnt)
+        #msg.extend(atc)
+        #return msg
+
+
+    def cloneDelegation(self, kever, gvrsn=None, *, version=None):
+        """
+        Recursively clone delegation chain from AID of Kever if one exists.
+
+        Parameters:
+            kever (Kever): Kever from which to clone the delegator's AID.
+            gvrsn (Versionage | None): CESR genus version for attachments.
+                None means derive from ``kever.serder.gvrsn`` or
+                ``kever.serder.pvrsn`` so V1 KELs are not rebuilt with the
+                global V2 default.
+            version (Versionage): legacy alias for gvrsn
+
+        """
+        if version is not None:
+            gvrsn = version
+        if gvrsn is None:
+            gvrsn = kever.serder.gvrsn or kever.serder.pvrsn
+        if kever.delegated and kever.delpre in self.kevers:
+            dkever = self.kevers[kever.delpre]
+            yield from self.cloneDelegation(dkever, gvrsn=gvrsn)
+
+            for dmsg in self.clonePreIter(pre=kever.delpre, fn=0, gvrsn=gvrsn):
+                yield dmsg
+
+    def fetchAllSealingEventByEventSeal(self, pre, seal, sn=0):
+        """
+        Search through a KEL for the event that contains a specific anchored
+        SealEvent type of provided seal but in dict form and is also fully
+        witnessed. Searches from sn forward (default = 0). Searches all events in
+        KEL of pre including disputed and/or superseded events.
+        Returns the Serder of the first event with the anchored SealEvent seal,
+
+            None if not found
+
+        Parameters:
+            pre (bytes|str): identifier of the KEL to search
+            seal (dict): dict form of Seal of any type SealEvent to find in anchored
+                seals list of each event
+            sn (int): beginning sn to search
+
+        """
+        from ..core.structing import SealEvent
+
+        if tuple(seal) != SealEvent._fields:  # wrong type of seal
+            return None
+
+        seal = SealEvent(**seal)  #convert to namedtuple
+
+        for srdr in self.getEvtPreIter(pre=pre, sn=sn):  # includes disputed & superseded
+            for eseal in srdr.seals or []:  # or [] for seals 'a' field missing
+                if tuple(eseal) == SealEvent._fields:
+                    eseal = SealEvent(**eseal)  # convert to namedtuple
+                    if seal == eseal and self.fullyWitnessed(srdr):
+                        return srdr
+        return None
+
+    # use alias here until can change everywhere for  backwards compatibility
+    findAnchoringSealEvent = fetchAllSealingEventByEventSeal  # alias
+
+    def fetchLastSealingEventByEventSeal(self, pre, seal, sn=0):
+        """
+        Search through a KEL for the last event at any sn but that contains a
+        specific anchored event seal of namedtuple SealEvent type that matches
+        the provided seal in dict form and is also fully witnessed.
+        Searchs from provided sn forward (default = 0).
+        Searches only last events in KEL of pre so does not include disputed
+        and/or superseded events.
+
+        Returns:
+            srdr (Serder): instance of the first event with the matching
+                anchoring SealEvent seal,
+                None if not found
+
+        Parameters:
+            pre (bytes|str): identifier of the KEL to search
+            seal (dict): dict form of Seal of any type SealEvent to find in anchored
+                seals list of each event
+            sn (int): beginning sn to search
+
+        """
+        from ..core.structing import SealEvent
+
+        if tuple(seal) != SealEvent._fields:  # wrong type of seal
+            return None
+
+        seal = SealEvent(**seal)  #convert to namedtuple
+
+        for srdr in self.getEvtLastPreIter(pre=pre, sn=sn):  # no disputed or superseded
+            for eseal in srdr.seals or []:  # or [] for seals 'a' field missing
+                if tuple(eseal) == SealEvent._fields:
+                    eseal = SealEvent(**eseal)  # convert to namedtuple
+                    if seal == eseal and self.fullyWitnessed(srdr):
+                        return srdr
+        return None
+
+
+
+    def fetchLastSealingEventBySeal(self, pre, seal, sn=0):
+        """Only searches last event at any sn therefore does not search
+        any disputed or superseded events.
+        Search through last event at each sn in KEL for the event that contains
+        an anchored Seal with same Seal type as provided seal but in dict form.
+        Searchs from sn forward (default = 0).
+        Returns the Serder of the first found event with the anchored Seal seal,
+
+            None if not found
+
+        Parameters:
+            pre (bytes|str): identifier of the KEL to search
+            seal (dict): dict form of Seal of any type to find in anchored
+                seals list of each event
+            sn (int): beginning sn to search
+
+        """
+        # create generic Seal namedtuple class using keys from provided seal dict
+        Seal = namedtuple('Seal', list(seal))  # matching type
+
+        for srdr in self.getEvtLastPreIter(pre=pre, sn=sn):  # only last evt at sn
+            for eseal in srdr.seals or []:  # or [] for seals 'a' field missing
+                if tuple(eseal) == Seal._fields:  # same type of seal
+                    eseal = Seal(**eseal)  #convert to namedtuple
+                    if seal == eseal and self.fullyWitnessed(srdr):
+                        return srdr
+        return None
+
+    def signingMembers(self, pre: str):
+        """ Find signing members of a multisig group aid.
+
+        Using the pubs index to find members of a signing group
+
+        Parameters:
+            pre (str): qb64 identifier prefix to find members
+
+        Returns:
+            list: qb64 identifier prefixes of signing members for provided aid
+
+        """
+        if (habord := self.habs.get(keys=(pre,))) is None:
+            return None
+
+        return habord.smids
+
+    def rotationMembers(self, pre: str):
+        """ Find rotation members of a multisig group aid.
+
+        Using the digs index to lookup member pres of a group aid
+
+        Parameters:
+            pre (str): qb64 identifier prefix to find members
+
+        Returns:
+            list: qb64 identifier prefixes of rotation members for provided aid
+        """
+        if (habord := self.habs.get(keys=(pre,))) is None:
+            return None
+
+        return habord.rmids
+
+    def fullyWitnessed(self, serder):
+        """ Verify the witness threshold on the event
+
+        Parameters:
+            serder (Serder): event serder to validate witness threshold
+
+        Returns:
+
+        """
+        # Verify fully receipted, because this witness may have persisted before all receipts
+        # have been gathered if this ius a witness for serder.pre
+        # get unique verified wigers and windices lists from wigers list
+        wigers = self.wigs.get(keys=(serder.preb, serder.saidb))
+        kever = self.kevers[serder.pre]
+        toad = kever.toader.num
+
+        return not len(wigers) < toad
+
+    def resolveVerifiers(self, pre=None, sn=0, dig=None):
+        """
+        Returns the Tholder and Verfers for the provided identifier prefix.
+        Default pre is own .pre
+
+        Parameters:
+            pre(str) is qb64 str of bytes of identifier prefix.
+            sn(int) is the sequence number of the est event
+            dig(str) is qb64 str of digest of est event
+
+        """
+        from ..core import coring
+
+        prefixer = coring.Prefixer(qb64=pre)
+        if prefixer.transferable:
+            # receipted event and receipter in database so get receipter est evt
+            # retrieve dig of last event at sn of est evt of receipter.
+            sdig = self.kels.getLast(keys=prefixer.qb64b, on=sn)
+            if sdig is None:
+                # receipter's est event not yet in receipters's KEL
+                raise ValidationError("key event sn {} for pre {} is not yet in KEL"
+                                             "".format(sn, pre))
+            sdig = sdig.encode("utf-8")
+            # retrieve last event itself of receipter est evt from sdig
+            sserder = self.evts.get(keys=(prefixer.qb64b, bytes(sdig)))
+            # assumes db ensures that sserder must not be none because sdig was in KE
+            if dig is not None and not sserder.compare(said=dig):  # endorser's dig not match event
+                raise ValidationError("Bad proof sig group at sn = {}"
+                                             " for ksn = {}."
+                                             "".format(sn, sserder.sad))
+
+            verfers = sserder.verfers
+            tholder = sserder.tholder
+
+        else:
+            verfers = [coring.Verfer(qb64=pre)]
+            tholder = coring.Tholder(sith="1")
+
+        return tholder, verfers
+
+    def getEvtPreIter(self, pre, sn=0):
+        """
+        Returns iterator of event messages without attachments
+        in sn order from the KEL of identifier prefix pre.
+        Essentially a replay of all event messages without attachments
+        for each sn from the KEL of pre including superseded duplicates
+
+        Parameters:
+            pre (bytes|str): identifier prefix
+            sn (int): sequence number (default 0) to begin interation
+        """
+        if hasattr(pre, 'encode'):
+            pre = pre.encode("utf-8")
+
+        for dig in self.kels.getAllIter(keys=pre, on=sn):
+            try:
+                if not (serder := self.evts.get(keys=(pre, dig))):
+                    raise MissingEntryError("Missing event for dig={}.".format(dig))
+
+            except Exception:
+                continue  # skip this event
+
+            yield serder  # event as Serder
+
+
+    def getEvtLastPreIter(self, pre, sn=0):
+        """
+        Returns iterator of event messages without attachments
+        in sn order from the KEL of identifier prefix pre.
+        Essentially a replay of all event messages without attachments
+        for each sn from the KEL of pre including superseded duplicates
+
+        Parameters:
+            pre (bytes|str): identifier prefix
+            sn (int): sequence number (default 0) to begin interation
+        """
+        if hasattr(pre, 'encode'):
+            pre = pre.encode("utf-8")
+
+        for dig in self.kels.getLastIter(keys=pre, on=sn):
+            try:
+
+                if not (serder := self.evts.get(keys=(pre, dig) )):
+                    raise MissingEntryError("Missing event for dig={}.".format(dig))
+
+            except Exception:
+                continue  # skip this event
+
+            yield serder  # event as Serder
 
 
 class BaserDoer(doing.Doer):

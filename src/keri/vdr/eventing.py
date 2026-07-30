@@ -14,7 +14,7 @@ from  ordered_set import OrderedSet as oset
 from hio.help import decking, ogler
 
 from ..kering import (Kinds, Ilks, versify,
-                    Version,  Vrsn_1_0,
+                    Version,  Vrsn_1_0, Vrsn_2_0,
                     MissingWitnessSignatureError, MissingAnchorError,
                     ValidationError, OutOfOrderError,
                     LikelyDuplicitousError, MissingEntryError, MissingAnchorError,
@@ -603,7 +603,8 @@ def query(regk,
           dtb=None,
           stamp=None,
           version=Version,
-          kind=Kinds.json
+          kind=Kinds.json,
+          pre=""
           ):
     """ Returns serder of credentialquery (qry) event message.
 
@@ -623,12 +624,15 @@ def query(regk,
         stamp (str): ISO 8601 formatted current datetime of query message
         version (Versionage): the API version
         kind (str): the event type
+        pre (str): qb64 identifier prefix of the querying AID
 
     Returns:
         Serder: query event message Serder
 
     """
     qry = dict(i=vcid, ri=regk)
+    if version >= Vrsn_2_0:
+        qry["src"] = pre
 
     if dt is not None:
         qry["dt"] = dt
@@ -640,6 +644,7 @@ def query(regk,
         qry["dtb"] = dt
 
     return queryCore(route=route,
+                          pre=pre,
                           replyRoute=replyRoute,
                           query=qry,
                           stamp=stamp,
@@ -807,6 +812,7 @@ class Tever:
                       toad=self.toad,
                       wits=self.baks,
                       cnfg=cnfg,
+                      version=self.version,
                       #kind=kind
                       )
                 )
@@ -1223,6 +1229,7 @@ class Tever:
                        eilk=vcilk,
                        ra=ra,
                        a=dict(s=seqner.sn, d=saider.qb64),
+                       version=self.version,
                        )
 
     def vcSn(self, vci):
@@ -2404,11 +2411,11 @@ class Reger(LMDBer):
         self.cancs = CatCesrSuber(db=self, subkey='cancs.',
                                          klas=(Prefixer, Number, Diger))
 
-        # all sad path ssgs (sad pathed indexed signature serializations) maps SAD quinkeys
+        # all sad path tsgs (sad pathed indexed signature serializations) maps SAD quinkeys
         # given by quintuple (saider.qb64, path, prefixer.qb64, number.qb64, diger.qb64)
         # of credential and trans signer's key state est evt to val Siger for each
         # signature.
-        self.spsgs = CesrIoSetSuber(db=self, subkey='ssgs.', klas=Siger)
+        self.spsgs = CesrIoSetSuber(db=self, subkey='tsgs.', klas=Siger)
 
         # all sad path scgs  (sad pathed non-indexed signature serializations) maps
         # couple (SAD SAID, path) to couple (Verfer, Cigar) of nontrans signer of signature in Cigar
@@ -2513,7 +2520,7 @@ class Reger(LMDBer):
                 issatc=issatc.decode("utf-8"),
                 rev=rserder.sad if status.et in [Ilks.rev, Ilks.brv] else None,
                 revatc=revatc.decode("utf-8") if status.et in [Ilks.rev, Ilks.brv] else None,
-                pre=creder.issuer,
+                pre=creder.israid,
                 schema=schemer.sed,
                 chains=chains,
                 status=asdict(status),
@@ -2532,7 +2539,7 @@ class Reger(LMDBer):
                 Number(qb64b=iss, strip=True)
                 saider = Saider(qb64b=iss)
 
-                anc = db.cloneEvtMsg(pre=creder.issuer, fn=0, dig=saider.qb64b)
+                anc = db.cloneEvtMsg(pre=creder.israid, fn=0, dig=saider.qb64b)
                 aserder = SerderKERI(raw=anc)
                 ancatc = bytes(anc[aserder.size:])
                 cred['anc'] = aserder.sad
@@ -2547,7 +2554,7 @@ class Reger(LMDBer):
                     Number(qb64b=rev, strip=True)
                     saider = Saider(qb64b=rev)
 
-                    anc = db.cloneEvtMsg(pre=creder.issuer, fn=0, dig=saider.qb64b)
+                    anc = db.cloneEvtMsg(pre=creder.israid, fn=0, dig=saider.qb64b)
                     aserder = SerderKERI(raw=anc)
                     ancatc = bytes(anc[aserder.size:])
                     cred['revanc'] = aserder.sad

@@ -9,13 +9,9 @@ from __future__ import annotations
 
 import asyncio
 import semver
-import importlib
-from collections import namedtuple
 
 from hio.base import doing
 from hio.help import ogler
-
-from ordered_set import OrderedSet as oset
 
 from keri import __version__
 
@@ -26,12 +22,11 @@ from ..recording import (KeyStateRecord, EventSourceRecord,
                          MsgCacheRecord, WellKnownAuthN,
                          TopicsRecord)
 
-from ..kering import (MissingEntryError, ValidationError,
-                      ConfigurationError, DatabaseError, Vrsn_1_0)
+from ..kering import MissingEntryError, DatabaseError, Vrsn_1_0
 
 from .webdbing import WebDBer
 
-from .basebasing import BaserBase, statedict
+from .basebasing import BaserBase
 
 logger = ogler.getLogger()
 
@@ -76,7 +71,7 @@ class WebBaser(WebDBer, BaserBase):
             "names.", "obvs.", "oobis.", "ooes.", "pdes.", "pmkm.", "pmks.", "pmsk.",
             "pses.", "ptds.", "pwes.", "qnfs.", "rcts.", "reps.", "rpes.", "rmfa.",
             "roobi.", "rpys.", "scgs.", "schema.", "sdts.", "sids.", "sigs.", "sscs.",
-            "ssgs.", "ssts.", "stts.", "tdcs.", "tmsc.", "tmqs.", "trqs.", "tsgs.", "udes.",
+            "ssts.", "stts.", "tdcs.", "tmsc.", "tmqs.", "trqs.", "tsgs.", "udes.",
             "ures.", "uwes.", "vrcs.", "vres.", "vers.", "wigs.", "wits.", "wkas.",
             "witm.", "woobi.", "wwas."
         ]
@@ -296,8 +291,9 @@ class WebBaser(WebDBer, BaserBase):
                                              klas=(coring.Prefixer, coring.Cigar))
         self.ures = subing.CatCesrIoSetSuber(db=self, subkey='ures.',
                                              klas=(coring.Diger, coring.Prefixer, coring.Cigar))
-        self.vrcs = subing.CatCesrIoSetSuber(db=self, subkey='vrcs.',
-                             klas=(coring.Prefixer, coring.Number, coring.Diger, indexing.Siger))
+        self.vrcs = subing.CesrIoSetSuber(db=self,
+                                          subkey='vrcs.',
+                                          klas=indexing.Siger)
         self.vres = subing.CatCesrIoSetSuber(db=self, subkey='vres.',
                              klas=(coring.Diger, coring.Prefixer, coring.Number, coring.Diger, indexing.Siger))
         self.pses = subing.OnIoSetSuber(db=self, subkey='pses.')
@@ -322,7 +318,7 @@ class WebBaser(WebDBer, BaserBase):
                                    subkey='esrs.')
 
         # misfit escrows whose processing may change the .esrs event source record
-        self.misfits = subing.IoSetSuber(db=self, subkey='mfes.')
+        self.misfits = subing.OnIoSetSuber(db=self, subkey='mfes.')
 
         # delegable events escrows. events with local delegator that need approval
         self.delegables = subing.IoSetSuber(db=self, subkey='dees.')
@@ -345,11 +341,11 @@ class WebBaser(WebDBer, BaserBase):
         # all sad  sdts (sad datetime serializations) maps said to date-time
         self.sdts = subing.CesrSuber(db=self, subkey='sdts.', klas=coring.Dater)
 
-        # all sad ssgs (sad indexed signature serializations) maps SAD quadkeys
+        # all sad tsgs (sad indexed signature serializations) maps SAD quadkeys
         # given by quadruple (diger.qb64, prefixer.qb64, seqner.q64, diger.qb64)
         #  of reply and trans signer's key state est evt to val Siger for each
         # signature.
-        self.ssgs = subing.CesrIoSetSuber(db=self, subkey='ssgs.', klas=indexing.Siger)
+        self.tsgs = subing.CesrIoSetSuber(db=self, subkey='tsgs.', klas=indexing.Siger)
 
         # all sad scgs  (sad non-indexed signature serializations) maps SAD SAID
         # to couple (Verfer, Cigar) of nontrans signer of signature in Cigar
@@ -359,7 +355,7 @@ class WebBaser(WebDBer, BaserBase):
 
         # all reply messages. Maps reply said to serialization. Replys are
         # versioned sads ( with version string) so use Serder to deserialize and
-        # use  .sdts, .ssgs, and .scgs for datetimes and signatures
+        # use  .sdts, .tsgs, and .scgs for datetimes and signatures
         # TODO: clean
         self.rpys = subing.SerderSuber(db=self, subkey='rpys.')
 
@@ -707,7 +703,7 @@ class WebBaser(WebDBer, BaserBase):
 
         for keys in removes:
             self.habs.rem(keys=keys)
-    
+
 
     async def clean(self):
         """Clean database by replaying events into a fresh clone and swapping data."""

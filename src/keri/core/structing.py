@@ -14,7 +14,7 @@ from ..kering import (Colds, ValidationError,
 from ..help import helping
 
 from .coring import (IceMapDom, Diger, DigDex, Prefixer, Number, Verser,
-                     Labeler, Noncer, NonceDex, Texter)
+                     Labeler, Noncer, NonceDex, Texter, Dater)
 from .counting import Codens, Counter
 from .signing import Tiers, Salter
 
@@ -37,20 +37,20 @@ SealDigest = namedtuple("SealDigest", 'd')
 # use MerkleRootSealSingles as count code for CESR native
 SealRoot = namedtuple("SealRoot", 'rd')
 
+# Event Seal: triple (i, s, d)
+# i = pre is qb64 of identifier prefix of KEL for event,
+# s = sn of event as lowercase hex string snh no leading zeros,
+# d = SAID digest qb64 of key event
+# use SealSourceTriples as count code for CESR native
+SealEvent = namedtuple("SealEvent", 'i s d')
+
 # Source Seal: duple (s, d)  for Issuance, Delegation, or Transaction Event
 # where the AID pre of the issuer is implied by the context wherein the seal appears.
-# s = sn of event as lowercase hex string  no leading zeros,
+# s = sn of event as lowercase hex string snh  no leading zeros,
 # d = SAID digest qb64 of event (issuance, delegation, or transaction)
 # the pre is provided in the 'i' field  qb64 of identifier prefix of KEL
 # use SealSourceCouples as count code for CESR native
 SealSource = namedtuple("SealSource", 's d')
-
-# Event Seal: triple (i, s, d)
-# i = pre is qb64 of identifier prefix of KEL for event,
-# s = sn of event as lowercase hex string  no leading zeros,
-# d = SAID digest qb64 of key event
-# use SealSourceTriples as count code for CESR native
-SealEvent = namedtuple("SealEvent", 'i s d')
 
 # Last Establishment Event Seal: uniple (i,)
 # i = pre is qb64 of identifier prefix of KEL from which to get last est, event
@@ -70,6 +70,8 @@ SealBack = namedtuple("SealBack", 'bi d')
 # use TypedDigestSealCouples count code for CESR Native
 SealKind = namedtuple("SealKind", 't d')
 
+# following are attachments
+
 # Blinded State quadruple for Blindable State Update Event 'bup' for Transaction
 # Event Registry
 # d = SAID digest qb64 of blindable state (Noncer)
@@ -88,7 +90,7 @@ BlindState = namedtuple("BlindState", 'd u td ts')
 # u = UUID blind as deterministically derived from update sn and salty nonce (Noncer)
 # td = SAID of ACDC top-level 'd' field value (Noncer)
 # ts = state as string text (Labeler)
-# bn = bound issuee key event hex sequence number at time of state update
+# bn = bound issuee key event hex sequence number bnh at time of state update
 # bd = bound issuee key event SAID at time of state update
 # use BoundStateSextuples count code for CESR native
 BoundState = namedtuple("BoundState", 'd u td ts bn bd')
@@ -101,7 +103,35 @@ BoundState = namedtuple("BoundState", 'd u td ts bn bd')
 # use TypedMediaQuadruples count code for CESR native
 TypeMedia = namedtuple("TypeMedia", 'd u mt mv')
 
-# Following are not seals only used in database
+# FirstSeen
+# f = fn first seen number of event as lowercase hex string snh no leading zeros, (Number)
+# dt = date time stamp str of RFC-3339 profile of ISO-8601 (Dater)
+# use FirstSeenReplayCouples count code for CESR native
+FirstSeen = namedtuple("FirstSeen", 'f, dt')
+
+# Transferable Receipts
+# ri = AID pre qb64 of receiptor (Prefixer)
+# n = sn of receipted event as lowercase hex string snh no leading zeros, (Number)
+# d = SAID digest qb64 of receipted event (Diger)
+# rss = receiptor indexed signatures qb64 list[Siger]
+# use TransReceiptIdxSigGroups count code for CESR native
+TransReceipts = namedtuple("TransReceipts", 'i, n, d, rss')
+
+# Transferable Signatures
+# i = AID pre qb64 of signer (Prefixer)
+# n = sn of signing est event as lowercase hex string snh no leading zeros, (Number)
+# d = SAID digest qb64 of signing est event (Diger)
+# iss = signer indexed signatures qb64 list[Siger]
+# use TransIdxSigGroups count code for CESR native
+TransSigs = namedtuple("TransSigs", 'i, n, d, iss')
+
+# Transferable Last Signatures
+# i = AID pre qb64 of signer (Prefixer)
+# iss = signer indexed signatures qb64 list[Siger]
+# use TransLastIdxSigGroups count code for CESR native
+TransLastSigs = namedtuple("TransLastSigs", 'i, iss')
+
+# Following are not seals or attachments only used in database
 
 # State Establishment Event (latest current) : quadruple (s, d, br, ba)
 # s = sn of latest est event as lowercase hex string  no leading zeros,
@@ -123,7 +153,7 @@ StateEvent = namedtuple("StateEvent", 's t d')
 #       namedtuple with values as primitive classes
 # ipn = primitive __init__ keyword parameter name to use when casting
 #        default None. When default then use qb64 or qb64b as appropriate.
-Castage = namedtuple('Castage', "kls ipn", defaults=(None, ))
+Castage = namedtuple('Castage', "kls ipn", defaults=(None, )) # defaults apply rightmost
 
 
 @dataclass(frozen=True)
@@ -134,7 +164,7 @@ class EmptyClanDom(IceMapDom):
     Only provide defined classes.
     Undefined are left out so that inclusion(exclusion) via 'in' operator works.
 
-    Example: EmptyClanDex[name]
+    Example: EmptyClanDom[name]
     """
 
     def __iter__(self):
@@ -154,7 +184,7 @@ class EmptyCastDom(IceMapDom):
     Only provide defined namedtuples casts.
     Undefined are left out so that inclusion(exclusion) via 'in' operator works.
 
-    Example: EmptyCastDex[name]
+    Example: EmptyCastDom[name]
     """
 
     def __iter__(self):
@@ -186,8 +216,6 @@ class SealClanDom(IceMapDom):
         return iter(astuple(self))  # enables value not key inclusion test with "in"
 
 SClanDom = SealClanDom()  # create instance
-
-
 
 
 @dataclass(frozen=True)
@@ -316,6 +344,46 @@ class TypeMediaCastDom(IceMapDom):
 
 TMCastDom = TypeMediaCastDom()  # create instance
 
+@dataclass(frozen=True)
+class FirstSeenClanDom(IceMapDom):
+    """FirstSeenClanDom is dataclass of namedtuple first seen class references
+    (clans) each indexed by its class name.
+
+    Only provide defined classes.
+    Undefined are left out so that inclusion(exclusion) via 'in' operator works.
+
+    Example: FirstSeenClanDom[name]
+    """
+    FirstSeen: type[NamedTuple] = FirstSeen  # FirstSeen class reference (f,dt)
+
+    def __iter__(self):
+        return iter(astuple(self))  # enables value not key inclusion test with "in"
+
+FSClanDom = FirstSeenClanDom()  # create instance
+
+
+@dataclass(frozen=True)
+class FirstSeenCastDom(IceMapDom):
+    """FirstSeenCastDom is dataclass of namedtuple first seen instances whose
+    field values are Castage instances of named primitive class class references
+    for those fields.
+
+    indexed by its namedtuple class name.
+
+    Only provide defined namedtuples casts.
+    Undefined are left out so that inclusion(exclusion) via 'in' operator works.
+
+    Example: FirstSeenCastDom[name]
+
+    """
+    FirstSeen: NamedTuple = FirstSeen(f=Castage(Number, 'numh'),
+                                      dt=Castage(Dater, 'dts'))  # FirstSeen instance
+
+    def __iter__(self):
+        return iter(astuple(self))  # enables value not key inclusion test with "in"
+
+FSCastDom = FirstSeenCastDom()  # create instance
+
 
 @dataclass(frozen=True)
 class AllClanDom(IceMapDom):
@@ -340,6 +408,7 @@ class AllClanDom(IceMapDom):
     BlindState: type[NamedTuple] = BlindState  # BlindState class reference (d,u,td,ts)
     BoundState: type[NamedTuple] = BoundState  # BoundState class reference (d,u,td,ts,bn,bd)
     TypeMedia: type[NamedTuple] = TypeMedia  # TypeMedia class reference (d,u,mt,mv)
+    FirstSeen: type[NamedTuple] = FirstSeen  # FirstSeen class reference (f,dt)
 
     def __iter__(self):
         return iter(astuple(self))  # enables value not key inclusion test with "in"
@@ -389,6 +458,8 @@ class AllCastDom(IceMapDom):
                                         u=Castage(Noncer, 'nonce'),
                                         mt=Castage(Labeler, 'text'),
                                         mv=Castage(Texter, 'text'))  # TypeMedia instance
+    FirstSeen: NamedTuple = FirstSeen(f=Castage(Number, 'numh'),
+                                      dt=Castage(Dater, 'dts'))  # FirstSeen instance
 
     def __iter__(self):
         return iter(astuple(self))  # enables value not key inclusion test with "in"
@@ -408,6 +479,7 @@ ClanToCodens[AClanDom.SealKind.__name__] = Codens.TypedDigestSealCouples
 ClanToCodens[AClanDom.BlindState.__name__] = Codens.BlindedStateQuadruples
 ClanToCodens[AClanDom.BoundState.__name__] = Codens.BoundStateSextuples
 ClanToCodens[AClanDom.TypeMedia.__name__] = Codens.TypedMediaQuadruples
+ClanToCodens[AClanDom.FirstSeen.__name__] = Codens.FirstSeenReplayCouples
 
 
 # map counter codename to Structor clan name for ser/des as counted group
@@ -428,20 +500,19 @@ class Structor:
     Instance Creation Patterns:
 
         Structor(data):
+        Structor(crew): when known cast in .Casts for crew fields mark
 
-        Structor(clan, cast, crew):
-        Structor(clan, cast, qb64):
-        Structor(clan, cast, qb2):
+        Structor(clan, crew):  when known cast in .Casts for clan fields mark
+        Structor(clan, qb64): when known cast in .Casts for clan fields mark
+        Structor(clan, qb2):  when known cast in .Casts for clan fields mark
 
         Structor(cast, crew):
         Structor(cast, qb64):
         Structor(cast, qb2):
 
-        Structor(clan, crew):  when known cast in .Casts for clan
-        Structor(clan, qb64): when known cast in .Casts for clan
-        Structor(clan, qb2):  when known cast in .Casts for clan
-
-        Structor(crew): when known cast in .Casts for crew
+        Structor(clan, cast, crew):
+        Structor(clan, cast, qb64):
+        Structor(clan, cast, qb2):
 
 
     Class Attributes:
@@ -466,7 +537,6 @@ class Structor:
                 computed from serialized dummied .mad
         Dummy (str): dummy character for computing SAIDs
 
-
     When known casts or provided in .Clans/.Casts then more flexible creation
     is supported for different types of provided cast and crew.
     When no clan is provided and an unknown cast and/or crew are provided as
@@ -474,14 +544,16 @@ class Structor:
     cast and/or crew keys(). Subclasses may override this behavior by raising
     an exception for unknown or custom clans.
 
-
     Properties:
         data (NamedTuple): instance whose fields are named instances of CESR primitives
         clan (type[NamedTuple]): .data's class, class object reference
         cast (NamedTuple | None): values are Castage instances that each provide
                     CESR primitive class references and primitive init parameters
                     used to initialize .data's primitive instances.
-        crew (NamedTuple): named qb64 values of .data's primitive instances
+        crew (NamedTuple): named qb64 serialized values of .data's CESR primitives
+                           data.x = Matter(qb64=crew.x). Use crew to deserialize
+                           to data. Use cast to deserialize crew to data with
+                           Matter init parameter besides qb64. Clan holds class.
         qb64 (str): concatenated data values as qb64 str of data's primitives
         qb64b (bytes): concatenated data values as qb64b  of data's primitives
         qb2 (bytes): concatenated data values as qb2 bytes of data's primitives
@@ -548,9 +620,11 @@ class Structor:
 
     @classmethod
     def enclose(cls, structors, cold=Colds.txt):
-        """Serializes structors with prepended counter code in either text or binary
-        domain as bytes determined by cold where text='txt' or binary='bny'
-        Uses .clan to determine counter.code from .ClanCodes
+        """Serializes structors of same clan with prepended counter code in
+        either text or binary domain as bytes determined by cold where
+        text='txt' or binary='bny'.
+        All structors must be of the same clan to join into one group.
+        Uses .clan of zeroth structure to determine counter.code from .ClanCodes
 
         Returns:
             enclosure (bytearray): enclosure serialized structors with
@@ -568,10 +642,10 @@ class Structor:
         buf = bytearray()
         clan = None
         for structor in structors:
-            if clan is None:
-                clan = structor.clan
+            if clan is None:  # zeroth structor
+                clan = structor.clan # uses clan from zeroth structor
             else:
-                if structor.clan != clan:
+                if structor.clan != clan:  # all structors must be same clan
                     raise InvalidValueError(f"Invalid  as clan={structor.clan.__name__}"
                                             f" not sames as clan={clan.__name__}")
             if cold == Colds.txt:
@@ -664,22 +738,23 @@ class Structor:
         """Initialize instance
 
         Parameters:
-            data (NamedTuple | None): fields are named primitive instances for .data
+            data (NamedTuple|None): fields are named primitive instances for .data
                 Given data can derive clan, cast, crew, qb64, and qb2
-            clan (type[NamedTuple]): data's class, provides class reference for
-                generating .data when data missing.
-            cast (NamedTuple | dict | Iterable | None):  values are Castage
+            clan (type[NamedTuple]): data's class reference for generating .data
+                from crew or qb64 or qb2 when data missing.
+            cast (NamedTuple|dict|Iterable|None):  field values are Castage
                 instances that each provide CESR primitive class references
-                and primitive init parameter used to .data's primitive
-                instances. None means .data provided directly not generated
-                from cast. Each value provides CESR  primitive subclass reference
-                used to create primitive instances for generating .data.
-                Can be used to infer namedtuple type of .data when data and
-                clan missing. Takes precendence over crew.
+                and primitive init parameter applied to .data's primitive
+                instances. None means use .data provided not modified through
+                casting. Each value provides CESR  primitive subclass reference
+                used to create primitive instances to generate .data. from crew
+                or qb64 or qb2
+                Can be used to infer namedtuple type of .data for clan when data
+                and clan missing. Takes precendence over crew.
             crew (NamedTuple | dict | Iterable | None): each value provides qb64 value
                 of primitive for generating .data with .cast when data missing.
-                Can be used to infer namedtuple type of .data when data and clan
-                missing.
+                Can be used to infer namedtuple type of .data for clan when data
+                and clan missing.
             naive (bool): False means when none of cast, clan, crew provided
                             then infer cast from namedtupe type of data in .Costs
                             otherwise create naive cast from fields in data
@@ -726,7 +801,7 @@ class Structor:
             # when cast is not None then will be used instead of generating
             # custom cast below
 
-        else:  # no data and not counter so see if can infer clan and cast
+        else:  # no data and not counter so see if can infer clan from cast or crew
             if not clan:  # attempt to get from cast and/or crew
                 if cast and isinstance(cast, tuple) and hasattr(cast, "_fields"):
                     clan = cast.__class__
@@ -805,7 +880,7 @@ class Structor:
                                                     f"{clan._fields} and crew="
                                                     f"{crew._fields}.")
 
-                        crew = clan(**crew._asdict())  # convert to clan
+                        crew = clan(**crew._asdict())  # apply clan
 
                     elif isinstance(crew, Mapping):
                         if tuple(crew) != clan._fields:  # fields is mark
@@ -813,10 +888,10 @@ class Structor:
                                                     f"{clan._fields} and keys crew="
                                                     f"{tuple(crew)}.")
 
-                        crew = clan(**crew)  # convert to clan
+                        crew = clan(**crew)  # allpy clan
 
                     elif isinstance(crew, helping.isNonStringSequence):
-                        crew = clan(*crew)  # convert to clan assumes elements in correct order
+                        crew = clan(*crew)  # apply clan assumes elements in correct order
 
                     else:
                         raise InvalidValueError(f"Invalid {crew=}.")
@@ -931,7 +1006,6 @@ class Structor:
                         if getattr(self.data, l).qb64 != said:
                             raise ValidationError(f"Invalid SAID for structor"
                                                   f"={self.crew}")
-
 
 
     @property
@@ -1250,7 +1324,7 @@ class Blinder(Structor):
     """Blinder is Structor subclass each instance holds a namedtuple .data of
     named values belonging to ACDC blinded state attribute for blindable state
     registry for TEL for ACDC to unblind the state attribute via a message
-    attachment.
+    attachment. Supports both BlindState and BoundState blinded state.
 
     See Structor class for more details.
 

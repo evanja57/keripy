@@ -17,9 +17,9 @@ import msgpack
 from ..help import helping
 
 if "emscripten" in sys.platform:
-    from .webdbing import WebDBer as DBer
+    from .webdbing import WebDBer as LMDBer
 else:
-    from .dbing import LMDBer as DBer
+    from .dbing import LMDBer
 
 logger = ogler.getLogger()
 
@@ -34,7 +34,7 @@ class KomerBase:
     Use an instance of one of the subclasses instead.
 
     Attributes:
-        db (DBer): database manager
+        db (LMDBer): instance of LMDB database manager class
         sdb (lmdb._Database): instance of named sub db lmdb for this Komer
         schema (Type[dataclass]): class reference of dataclass subclass
         kind (str): serialization/deserialization type from coring.Serials
@@ -44,7 +44,7 @@ class KomerBase:
     """
     Sep = '.'  # separator for combining key iterables
 
-    def __init__(self, db: DBer, *,
+    def __init__(self, db: LMDBer, *,
                  subkey: str = 'docs.',
                  klas: type[dataclass],  # class not instance
                  kind: str|None = None,
@@ -53,7 +53,7 @@ class KomerBase:
                  **kwa):
         """
         Parameters:
-            db (DBer): base db
+            db (LMDBer): base db
             klas (type[dataclass]):  reference to Class definition for dataclass sub class
             subkey (str):  LMDB sub database key
             kind (str): serialization/deserialization type
@@ -313,7 +313,7 @@ class Komer(KomerBase):
     """
 
     def __init__(self,
-                 db: DBer, *,
+                 db: LMDBer, *,
                  subkey: str = 'docs.',
                  klas: type[dataclass],  # class not instance
                  kind: str | None = None,
@@ -458,7 +458,7 @@ class IoSetKomer(KomerBase):
         sep (str): separator for combining keys tuple of strs into key bytes
     """
     def __init__(self,
-             db: DBer, *,
+             db: LMDBer, *,
              subkey: str = 'recs.',
              klas: type[dataclass],  # class not instance
              kind: str | None = None,
@@ -670,7 +670,7 @@ class DupKomer(KomerBase):
     This is a limitation of dupsort==True sub dbs in LMDB
     """
     def __init__(self,
-             db: DBer, *,
+             db: LMDBer, *,
              subkey: str = 'recs.',
              klas: type[dataclass],  # class not instance
              kind: str | None = None,

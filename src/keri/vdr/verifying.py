@@ -11,7 +11,7 @@ from typing import Type
 
 from hio.help import decking, ogler
 
-from ..kering import (Vrsn_1_0, Ilks, MissingChainError,
+from ..kering import (Ilks, MissingChainError,
                       MissingRegistryError, MissingSchemaError,
                       ValidationError, FailedSchemaValidationError,
                       MissingChainError, RevokedChainError)
@@ -66,7 +66,7 @@ class Verifier:
         """
         self.tvy = Tevery(reger=self.reger, db=self.hby.db, local=False)
         self.psr = Parser(framed=True, kvy=self.hby.kvy, tvy=self.tvy,
-                                  version=Vrsn_1_0)
+                                  version=self.hby.version)
         self.resolver = CacheResolver(db=self.hby.db)
 
         self.inited = True
@@ -111,7 +111,7 @@ class Verifier:
 
         if regk not in self.tevers:  # registry event not found yet
             if self.escrowMRE(creder, prefixer, seqner, saider):
-                self.cues.append(dict(kin="telquery", q=dict(ri=regk, i=vcid, issr=creder.issuer)))
+                self.cues.append(dict(kin="telquery", q=dict(ri=regk, i=vcid, issr=creder.israid)))
             raise MissingRegistryError("registry identifier {} not in Tevers".format(regk))
 
         state = self.tevers[regk].vcState(vcid)
@@ -161,7 +161,7 @@ class Verifier:
                     continue
                 nodeSaid = node["n"]
                 op = node['o'] if 'o' in node else None
-                state = self.verifyChain(nodeSaid, op, creder.issuer)
+                state = self.verifyChain(nodeSaid, op, creder.israid, creder.iseaid)
                 if state is None:
                     self.escrowMCE(creder, prefixer, seqner, saider)
                     self.cues.append(dict(kin="proof",  said=nodeSaid))
@@ -312,7 +312,7 @@ class Verifier:
         self.reger.logCred(creder, prefixer, seqner, saider)
 
         schema = creder.schema.encode("utf-8")
-        issuer = creder.issuer.encode("utf-8")
+        issuer = creder.israid.encode("utf-8")
 
         # Look up indicies
         saider = Saider(qb64=creder.said)
@@ -328,18 +328,21 @@ class Verifier:
         """ Returns query message for querying registry
         """
 
-        serder = query(regk=regk, vcid=vcid, dt=dt, dta=dta,
-                                dtb=dtb, **kwa)
+        serder = query(pre=pre, regk=regk, vcid=vcid, dt=dt, dta=dta,
+                       dtb=dtb, **kwa)
         hab = self.hby.habs[pre]
-        return hab.endorse(serder, last=True)
+        return hab.endorse(serder, last=True, framed=False, gvrsn=serder.pvrsn)
 
-    def verifyChain(self, nodeSaid, op, issuer):
+    def verifyChain(self, nodeSaid, op, issuer, issuee=None):
         """ Verifies the node credential at the end of an edge
 
         Parameters:
             nodeSaid: (str): qb64 SAID of node credential
             op(str): edge operator
-            issuer (str) qb64 AID of issuer
+            issuer (str) qb64 AID of the issuer of the near (edge-bearing) ACDC
+            issuee (str|None): qb64 AID of the issuee of the near (edge-bearing) ACDC,
+                required by the identity operators (E1E). None when the near ACDC is
+                untargeted.
 
         Returns:
             Serder: transaction event state notification message
@@ -349,12 +352,22 @@ class Verifier:
         if said is None:
             return None
 
-        creder = self.reger.creds.get(keys=nodeSaid)
+        creder = self.reger.creds.get(keys=nodeSaid)  # far (node) credential
 
-        if op not in ['I2I', 'DI2I', 'NI2I']:
+        if op not in ['I2I', 'DI2I', 'NI2I', 'E1E']:
             op = 'I2I' if 'i' in creder.attrib else 'NI2I'
 
-        if op != 'NI2I':
+        if op == 'E1E':
+            # Identity relation (discussion #1515): the issuee AID of the near ACDC
+            # (the one carrying this edge) MUST equal the issuee AID of the far node.
+            # Unlike the delegative I2I, this says nothing about the issuer, so the
+            # common SEDI case -- both credentials issued by a third party to the same
+            # subject, issuer != issuee -- is valid (and is exactly what I2I rejects).
+            # Resolve the far issuee via .iseaid so an aggregate node (A[1].i) works too.
+            farIssuee = creder.iseaid
+            if farIssuee is None or issuee is None or issuee != farIssuee:
+                return None
+        elif op != 'NI2I':
             if 'i' not in creder.attrib:
                 return None
 

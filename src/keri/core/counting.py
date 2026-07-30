@@ -52,13 +52,13 @@ class CounterCodex_1_0(IceMapDom):
     Only provide defined codes.
     Undefined are left out so that inclusion(exclusion) via 'in' operator works.
 
-    As subclass of MapCodex can get codes with item syntax using tag variables.
+    As subclass of IceMapDom can get codes with item syntax using tag variables.
     Example: codex[tag]
     """
     ControllerIdxSigs: str = '-A'  # Qualified Base64 Indexed Signature.
     WitnessIdxSigs: str = '-B'  # Qualified Base64 Indexed Signature.
     NonTransReceiptCouples: str = '-C'  # Composed Base64 Couple, pre+cig.
-    TransReceiptQuadruples: str = '-D'  # Composed Base64 Quadruple, pre+snu+dig+sig.
+    TransReceiptIdxSigGroups: str = '-D'  # Composed Base64 Quadruple, pre+snu+dig+ControllerIdxSigs of qb64.
     FirstSeenReplayCouples: str = '-E'  # Composed Base64 Couple, fnu+dts.
     TransIdxSigGroups: str = '-F'  # Composed Base64 Group, pre+snu+dig+ControllerIdxSigs group.
     SealSourceCouples: str = '-G'  # Composed Base64 couple, snu+dig of given delegator/issuer/transaction event
@@ -92,9 +92,10 @@ class QuadTripCodex_1_0(IceMapDom):
     Only provide defined codes.
     Undefined are left out so that inclusion(exclusion) via 'in' operator works.
 
-    As subclass of MapCodex can get codes with item syntax using tag variables.
+    As subclass of IceMapDom can get codes with item syntax using tag variables.
     Example: codex[tag]
     """
+    TransReceiptIdxSigGroups: str = '-D'  # Composed Base64 Quadruple, pre+snu+dig+ControllerIdxSigs of qb64.
     PathedMaterialCouples: str = '-L'  # Composed Grouped Pathed Material Quadlet (4 char each)
     BigPathedMaterialCouples: str = '--L'  # Composed Grouped Pathed Material Quadlet (4 char each)
     GenericGroup: str = '-T'  # Generic Material Quadlet (Universal with override)
@@ -119,7 +120,7 @@ class UniversalCodex_1_0(IceMapDom):
     Only provide defined codes.
     Undefined are left out so that inclusion(exclusion) via 'in' operator works.
 
-    As subclass of MapCodex can get codes with item syntax using tag variables.
+    As subclass of IceMapDom can get codes with item syntax using tag variables.
     Example: codex[tag]
     """
     GenericGroup: str = '-T'  # Generic Material Quadlet (Universal with override)
@@ -146,7 +147,7 @@ class SpecialUniversalCodex_1_0(IceMapDom):
     Only provide defined codes.
     Undefined are left out so that inclusion(exclusion) via 'in' operator works.
 
-    As subclass of MapCodex can get codes with item syntax using tag variables.
+    As subclass of IceMapDom can get codes with item syntax using tag variables.
     Example: codex[tag]
     """
     GenericGroup: str = '-T'  # Generic Material Quadlet (Universal with override)
@@ -169,7 +170,7 @@ class MessageUniversalCodex_1_0(IceMapDom):
     Only provide defined codes.
     Undefined are left out so that inclusion(exclusion) via 'in' operator works.
 
-    As subclass of MapCodex can get codes with item syntax using tag variables.
+    As subclass of IceMapDom can get codes with item syntax using tag variables.
     Example: codex[tag]
     """
     NonNativeBodyGroup: str = '-W'  # Message body Non-native enclosed with Texter
@@ -180,6 +181,24 @@ class MessageUniversalCodex_1_0(IceMapDom):
 
 MUDex_1_0 = MessageUniversalCodex_1_0()
 
+@dataclass(frozen=True)
+class BodyUniversalCodex_1_0(IceMapDom):
+    """BodyUniversalCodex_1_0 is codex hard (stable) part of all V1 message
+    universal counter codes that support CESR native full message Bodies.
+    Only provide defined codes.
+    Undefined are left out so that inclusion(exclusion) via 'in' operator works.
+
+    As subclass of IceMapDom can get codes with item syntax using tag variables.
+    Example: codex[tag]
+    """
+    NonNativeBodyGroup: str = '-W'  # Message body Non-native enclosed with Texter
+    BigNonNativeBodyGroup: str = '--W'  # Big Message body Non-native enclosed with Texter
+
+    def __iter__(self):
+        return iter(astuple(self))  # enables value not key inclusion test with "in"
+
+BUDex_1_0 = BodyUniversalCodex_1_0()
+
 
 @dataclass(frozen=True)
 class CounterCodex_2_0(IceMapDom):
@@ -187,7 +206,7 @@ class CounterCodex_2_0(IceMapDom):
     Only provide defined codes.
     Undefined are left out so that inclusion(exclusion) via 'in' operator works.
 
-    As subclass of MapCodex can get codes with item syntax using tag variables.
+    As subclass of IceMapDom can get codes with item syntax using tag variables.
     Example: codex[tag]
     """
     GenericGroup: str = '-A'  # Generic Group (Universal with Override).
@@ -216,8 +235,8 @@ class CounterCodex_2_0(IceMapDom):
     BigWitnessIdxSigs: str = '--L'  # Big Witness Indexed Signature(s) of qb64.
     NonTransReceiptCouples: str = '-M'  # NonTrans Receipt Couple(s), pre+cig.
     BigNonTransReceiptCouples: str = '--M'  # Big NonTrans Receipt Couple(s), pre+cig.
-    TransReceiptQuadruples: str = '-N'  # Trans Receipt Quadruple(s), pre+snu+dig+sig.
-    BigTransReceiptQuadruples: str = '--N'  # Big Trans Receipt Quadruple(s), pre+snu+dig+sig.
+    TransReceiptIdxSigGroups: str = '-N'  # Trans Receipt Indexed Signature Groups(s), pre+snu+dig+ControllerIdxSigs of qb64.
+    BigTransReceiptIdxSigGroups: str = '--N'  # Big Trans Receipt Indexed Signature Groups(s)(s), pre+snu+dig+ControllerIdxSigs of qb64.
     FirstSeenReplayCouples: str = '-O'  # First Seen Replay Couple(s), fnu+dts.
     BigFirstSeenReplayCouples: str = '--O'  # First Seen Replay Couple(s), fnu+dts.
     PathedMaterialCouples: str = '-P'  # Pathed Material couples. path+text
@@ -236,10 +255,10 @@ class CounterCodex_2_0(IceMapDom):
     BigBackerRegistrarSealCouples: str = '--V'  # Big Backer Registrar Seal Couple(s), brid+dig of sealed data.
     TypedDigestSealCouples: str = '-W'  # Typed Digest Seal Couple(s), type seal vers+dig of sealed data.
     BigTypedDigestSealCouples: str = '--W'  # Big Typed Digest Seal Couple(s), type seal vers+dig of sealed data.
-    TransIdxSigGroups: str = '-X'  # Trans Indexed Signature Group(s), pre+snu+dig+CtrControllerIdxSigs of qb64.
-    BigTransIdxSigGroups: str = '--X'  # Big Trans Indexed Signature Group(s), pre+snu+dig+CtrControllerIdxSigs of qb64.
-    TransLastIdxSigGroups: str = '-Y'  # Trans Last Est Evt Indexed Signature Group(s), pre+CtrControllerIdxSigs of qb64.
-    BigTransLastIdxSigGroups: str = '--Y'  # Big Trans Last Est Evt Indexed Signature Group(s), pre+CtrControllerIdxSigs of qb64.
+    TransIdxSigGroups: str = '-X'  # Trans Indexed Signature Group(s), pre+snu+dig+ControllerIdxSigs of qb64.
+    BigTransIdxSigGroups: str = '--X'  # Big Trans Indexed Signature Group(s), pre+snu+dig+ControllerIdxSigs of qb64.
+    TransLastIdxSigGroups: str = '-Y'  # Trans Last Est Evt Indexed Signature Group(s), pre+ControllerIdxSigs of qb64.
+    BigTransLastIdxSigGroups: str = '--Y'  # Big Trans Last Est Evt Indexed Signature Group(s), pre+ControllerIdxSigs of qb64.
     ESSRPayloadGroup: str = '-Z'  # ESSR Payload Group.
     BigESSRPayloadGroup: str = '--Z'  # Big ESSR Payload Group.
     BlindedStateQuadruples: str = '-a'  # Blinded transaction event state quadruples blid+uuid+said+state.
@@ -261,7 +280,7 @@ class UniversalCodex_2_0(IceMapDom):
     Only provide defined codes.
     Undefined are left out so that inclusion(exclusion) via 'in' operator works.
 
-    As subclass of MapCodex can get codes with item syntax using tag variables.
+    As subclass of IceMapDom can get codes with item syntax using tag variables.
     Example: codex[tag]
     """
     GenericGroup: str = '-A'  # Generic Group (Universal with Override).
@@ -299,7 +318,7 @@ class SpecialUniversalCodex_2_0(IceMapDom):
     Only provide defined codes.
     Undefined are left out so that inclusion(exclusion) via 'in' operator works.
 
-    As subclass of MapCodex can get codes with item syntax using tag variables.
+    As subclass of IceMapDom can get codes with item syntax using tag variables.
     Example: codex[tag]
     """
     GenericGroup: str = '-A'  # Generic Group (Universal with Override).
@@ -322,7 +341,7 @@ class MessageUniversalCodex_2_0(IceMapDom):
     Only provide defined codes.
     Undefined are left out so that inclusion(exclusion) via 'in' operator works.
 
-    As subclass of MapCodex can get codes with item syntax using tag variables.
+    As subclass of IceMapDom can get codes with item syntax using tag variables.
     Example: codex[tag]
     """
     DatagramSegmentGroup: str = '-D'  # Datagram Segment Group (Universal).
@@ -340,6 +359,28 @@ class MessageUniversalCodex_2_0(IceMapDom):
         return iter(astuple(self))  # enables value not key inclusion test with "in"
 
 MUDex_2_0 = MessageUniversalCodex_2_0()
+
+@dataclass(frozen=True)
+class BodyUniversalCodex_2_0(IceMapDom):
+    """BodyUniversalCodex_2_0 is codex hard (stable) part of all V2 message
+    universal counter codes that support CESR native message Bodies.
+    Only provide defined codes.
+    Undefined are left out so that inclusion(exclusion) via 'in' operator works.
+
+    As subclass of IceMapDom can get codes with item syntax using tag variables.
+    Example: codex[tag]
+    """
+    FixBodyGroup: str = '-F'  # Fixed Field Message Body Group (Universal).
+    BigFixBodyGroup: str = '--F'  # Big Fixed Field Message Body Group (Universal).
+    MapBodyGroup: str = '-G'  # Field Map Message Body Group (Universal).
+    BigMapBodyGroup: str = '--G'  # Big Field Map Message Body Group (Universal).
+    NonNativeBodyGroup: str = '-H'  # Message body Non-native enclosed with Texter
+    BigNonNativeBodyGroup: str = '--H'  # Big Message body Non-native enclosed with Texter
+
+    def __iter__(self):
+        return iter(astuple(self))  # enables value not key inclusion test with "in"
+
+BUDex_2_0 = BodyUniversalCodex_2_0()
 
 
 # CodeNames  is tuple of codes names given by attributes of union of codices
@@ -360,7 +401,7 @@ class SealCodex_2_0(IceMapDom):
     Only provide defined codes.
     Undefined are left out so that inclusion(exclusion) via 'in' operator works.
 
-    As subclass of MapCodex can get codes with item syntax using tag variables.
+    As subclass of IceMapDom can get codes with item syntax using tag variables.
     Example: codex[tag]
     """
     DigestSealSingles: str = '-Q'  # Digest Seal Single(s), dig of sealed data.
@@ -401,7 +442,10 @@ class Counter:
     Includes the following attributes and properties:
 
     Class Attributes:
-        Codes (dict): nested of codexes keyed by major and minor version
+        Codes (dict): nested codes keyed by major and minor version
+        SUCodes (dict): nested special universal codes keyed by major and minor version
+        MUCodes (dict): nested message universal codes keyed by major and minor version
+        BUCodes (dict): nested body universal codes keyed by major and minor version
         Names (dict): nested of map of code names to codes keyed by
                         major and minor version
         Hards (dict): of hard code sizes keyed by text domain selector
@@ -525,7 +569,7 @@ class Counter:
         },
     }
 
-    # special universal codes
+    # message universal codes
     MUCodes = \
     {
         Vrsn_1_0.major: \
@@ -535,6 +579,19 @@ class Counter:
         Vrsn_2_0.major: \
         {
             Vrsn_2_0.minor: MUDex_2_0,
+        },
+    }
+
+    # message universal codes
+    BUCodes = \
+    {
+        Vrsn_1_0.major: \
+        {
+            Vrsn_1_0.minor: BUDex_1_0,
+        },
+        Vrsn_2_0.major: \
+        {
+            Vrsn_2_0.minor: BUDex_2_0,
         },
     }
 
@@ -660,6 +717,82 @@ class Counter:
         },
     }
 
+    @classmethod
+    def makeGVC(cls, version):
+        """Makes genus version code from Versionage version
+
+        Parameters::
+            version (Versionage): version portion of Genus Version Code
+
+        Returns::
+            qb64b (bytes):  qb64b serialized genus version counter for KERI/ACDC genus
+
+        """
+        return cls(countB64=cls.verToB64(major=version.major,
+                                         minor=version.minor),
+                    code=Codens.KERIACDCGenusVersion,
+                    version=version).qb64b
+
+
+    @classmethod
+    def enclose(cls, *, qb64=None, qb2=None, code=Codens.AttachmentGroup,
+                version=Vrsn_2_0):
+        """Encloses (frames) CESR stream in qb64 (as bytes) or qb2 (as bytes)
+        with prepended counter of type code. Assumes counter in quadlets/triplets.
+        In V2 CESR, will work with all counters which must count quadlets/triplets)
+        In V1 CESR, will only work with counters that count quadlets/triplets
+
+        Returns:
+            enclosure (bytearray): stream in qb64 or qb2 with prepended counter
+                of type code. If both qb64 and qb2 are None then empty counter.
+                If qb64 then returns enclosure as bytearray in qb64 text domain
+                If qb2 then returns enclosure as bytearray in qb2 binary domain
+
+        Parameters:
+            qb64 (str|bytes|bytearray|memoryview|None): qualified Base64 sub-stream
+                to be enclosed. May be empty. None means use qb2 if provided.
+            qb2 (bytes|bytearray|memoryview|None): qualified Base2 sub-stream
+                to be enclosed. May be empty. None means ignore
+            code (str):  either stable (hard) part of derivation code or code name.
+                When code name then look up code from ._codes. This allows
+                versioning to change code but keep stable code name.
+        """
+        if qb64 is None and qb2 is None:
+            qb64 = b''  # default counter of empty content
+
+        enclosure = bytearray()
+        if qb64 is not None:  # process qb64 in text domain
+            if hasattr(qb64, "encode"):
+                qb64 = qb64.encode()  # convert to bytes
+            if isinstance(qb64, memoryview):
+                qb64 = bytearray(qb64)  # converts memoryview to bytearray
+            length = len(qb64)
+            if length % 4:  # invalid sized qb64 not aligned on 24 bit boundaries
+                raise ValueError(f"Bad enclosed qb64 {length=}")
+            count = length // 4
+            # processes code as codens code name
+            counter = cls(code=code, count=count, version=version)
+            if version.major < Vrsn_2_0.major and counter.code not in (QTDex_1_0):
+                raise ValueError(f"Non V1 quadlet/triplet counter code={counter.code}")
+            enclosure.extend(counter.qb64b)
+            enclosure.extend(qb64)
+
+        else:  # process qb2 in binary domain
+            if isinstance(qb2, memoryview):
+                qb2 = bytearray(qb2)  # converts memoryview to bytearray
+            length = len(qb2)
+            if length % 3:  # invalid sized qb64 not aligned on 24 bit boundaries
+                raise ValueError(f"Bad enclosed qb2 {length=}")
+            count = length // 3
+            # processes code as codens code name
+            counter = cls(code=code, count=count, version=version)
+            if version.major < Vrsn_2_0.major and counter.code not in (QTDex_1_0):
+                raise ValueError(f"Non V1 quadlet/triplet counter code={counter.code}")
+            enclosure.extend(counter.qb2)
+            enclosure.extend(qb2)
+
+        return enclosure
+
 
     def __init__(self, code=None, *, count=None, countB64=None,
                  qb64b=None, qb64=None, qb2=None, strip=False,
@@ -768,66 +901,6 @@ class Counter:
                                      "qb64 or qb2.")
 
         self._name = self.Names[version.major][latest][self.code]
-
-
-    @classmethod
-    def enclose(cls, *, qb64=None, qb2=None, code=Codens.AttachmentGroup,
-                version=Vrsn_2_0):
-        """Encloses (frames) CESR stream in qb64 (as bytes) or qb2 (as bytes)
-        with prepended counter of type code. Assumes counter in quadlets/triplets.
-        In V2 CESR, will work with all counters which must count quadlets/triplets)
-        In V1 CESR, will only work with counters that count quadlets/triplets
-
-        Returns:
-            enclosure (bytearray): stream in qb64 or qb2 with prepended counter
-                of type code. If both qb64 and qb2 are None then empty counter.
-                If qb64 then returns enclosure as bytearray in qb64 text domain
-                If qb2 then returns enclosure as bytearray in qb2 binary domain
-
-        Parameters:
-            qb64 (str|bytes|bytearray|memoryview|None): qualified Base64 sub-stream
-                to be enclosed. May be empty. None means use qb2 if provided.
-            qb2 (bytes|bytearray|memoryview|None): qualified Base2 sub-stream
-                to be enclosed. May be empty. None means ignore
-            code (str):  either stable (hard) part of derivation code or code name.
-                When code name then look up code from ._codes. This allows
-                versioning to change code but keep stable code name.
-        """
-        if qb64 is None and qb2 is None:
-            qb64 = b''
-
-        if qb64 is not None:  # process qb64 in text domain
-            if hasattr(qb64, "encode"):
-                qb64 = qb64.encode()  # convert to bytes
-            if isinstance(qb64, memoryview):
-                qb64 = bytearray(qb64)  # converts memoryview to bytearray
-            length = len(qb64)
-            if length % 4:  # invalid sized qb64 not aligned on 24 bit boundaries
-                raise ValueError(f"Bad enclosed qb64 {length=}")
-            count = length // 4
-            # processes code as codens code name
-            counter = cls(code=code, count=count, version=version)
-            if version.major < Vrsn_2_0.major and counter.code not in (QTDex_1_0):
-                raise ValueError("Non V1 quadlet/triplet counter code={counter.code}")
-            enclosure = bytearray(counter.qb64b)
-            enclosure.extend(qb64)
-            return enclosure
-
-        # process qb2 in binary domain
-        if isinstance(qb2, memoryview):
-            qb2 = bytearray(qb2)  # converts memoryview to bytearray
-        length = len(qb2)
-        if length % 3:  # invalid sized qb64 not aligned on 24 bit boundaries
-            raise ValueError(f"Bad enclosed qb2 {length=}")
-        count = length // 3
-        # processes code as codens code name
-        counter = cls(code=code, count=count, version=version)
-        if version.major < Vrsn_2_0.major and counter.code not in (QTDex_1_0):
-            raise ValueError("Non V1 quadlet/triplet counter code={counter.code}")
-        enclosure = bytearray(counter.qb2)
-        enclosure.extend(qb2)
-        return enclosure
-
 
 
     @property

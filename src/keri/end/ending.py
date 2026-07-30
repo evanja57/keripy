@@ -7,6 +7,7 @@ ReST API endpoints
 """
 import json
 import os
+import re
 import sys
 
 from http_sfv import Dictionary
@@ -19,7 +20,7 @@ from hio import base
 from hio.core import http, wiring
 from hio.help import ogler
 
-from ..kering import Roles, Schemes, OOBI_AID_HEADER
+from ..kering import Roles, Schemes
 
 from ..core import Cigar, Siger
 from ..help import helping
@@ -49,6 +50,14 @@ Signage = namedtuple("Signage", "markers indexed signer ordinal digest kind")
 DEFAULTHEADERS = ('(created)', '(request-target)')
 
 Inputage = namedtuple("Inputage", "name fields created keyid alg expires nonce context")
+
+
+OOBI_URL_TEMPLATE = "/oobi/{cid}/{role}"
+OOBI_RE = re.compile('\\A/oobi/(?P<cid>[^/]+)/(?P<role>[^/]+)(?:/(?P<eid>[^/]+))?\\Z', re.IGNORECASE)
+DOOBI_RE = re.compile('\\A/oobi/(?P<said>[^/]+)\\Z', re.IGNORECASE)
+WOOBI_RE = re.compile('\\A/.well-known/keri/oobi/(?P<cid>[^/]+)\\Z')
+
+OOBI_AID_HEADER = "KERI-AID"
 
 
 def signature(signages):

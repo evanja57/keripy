@@ -60,7 +60,8 @@ class Regery:
         self.reger = reger if reger is not None else Reger(name=self.name, base=base, db=self.hby.db, temp=temp,
                                                            reopen=True)
         self.tvy = Tevery(reger=self.reger, db=self.hby.db, local=True, lax=True)
-        self.psr = Parser(framed=True, kvy=self.hby.kvy, tvy=self.tvy, version=Vrsn_1_0)
+        self.psr = Parser(framed=True, kvy=self.hby.kvy, tvy=self.tvy,
+                                  version=self.hby.version)
 
         self.regs = {}  # List of local registries
         self.inited = False
@@ -244,6 +245,11 @@ class BaseRegistry:
         return self.tever.serder
 
     @property
+    def versionSerder(self):
+        """Return the registry serder that defines event version and kind."""
+        return self.vcp if self.vcp is not None else self.regser
+
+    @property
     def registries(self):
         return self.reger.registries
 
@@ -282,7 +288,8 @@ class Registry(BaseRegistry):
     issuance and revocation.
     """
 
-    def make(self, *, nonce=None, noBackers=True, baks=None, toad=None, estOnly=False, vcp=None):
+    def make(self, *, nonce=None, noBackers=True, baks=None, toad=None, estOnly=False, vcp=None,
+             version=None, kind=None):
         """ Delayed initialization of Issuer.
 
         Actual initialization of Issuer from properties or loaded from .reger.  Should
@@ -305,12 +312,16 @@ class Registry(BaseRegistry):
             if estOnly:
                 self.cnfg.append(TraitDex.EstOnly)
 
+            version = version if version is not None else self.hab.kever.serder.pvrsn
+            kind = kind if kind is not None else self.hab.kever.serder.kind
             self.vcp = inceptEvent(pre,
                                     baks=baks,
                                     toad=toad,
                                     nonce=nonce,
                                     cnfg=self.cnfg,
-                                    code=MtrDex.Blake3_256)
+                                    code=MtrDex.Blake3_256,
+                                    version=version,
+                                    kind=kind)
         else:
             self.vcp = vcp
 
@@ -337,13 +348,17 @@ class Registry(BaseRegistry):
         if self.noBackers:
             raise ValueError("Attempt to rotate registry {} that does not support backers".format(self.regk))
 
-        serder = rotateEvent(dig=self.regser.said,
+        regser = self.regser
+        vserder = self.versionSerder
+        serder = rotateEvent(dig=regser.said,
                              regk=self.regk,
                              sn=self.regi + 1,
                              toad=toad,
                              baks=self.baks,
                              adds=adds,
-                             cuts=cuts)
+                             cuts=cuts,
+                             version=vserder.pvrsn,
+                             kind=vserder.kind)
 
         self.processEvent(serder=serder)
         return serder
@@ -358,14 +373,19 @@ class Registry(BaseRegistry):
         Returns:
             SerderKERI: The SerderKERI of the credential issuance event
         """
+        regser = self.regser
+        vserder = self.versionSerder
         if self.noBackers:
-            serder = issueEvent(vcdig=said, regk=self.regk, dt=dt)
+            serder = issueEvent(vcdig=said, regk=self.regk, dt=dt,
+                                version=vserder.pvrsn, kind=vserder.kind)
         else:
             serder = backerIssue(vcdig=said,
                                           regk=self.regk,
                                           regsn=self.regi,
-                                          regd=self.regser.said,
-                                          dt=dt)
+                                          regd=regser.said,
+                                          dt=dt,
+                                          version=vserder.pvrsn,
+                                          kind=vserder.kind)
 
         self.processEvent(serder=serder)
         return serder
@@ -390,14 +410,19 @@ class Registry(BaseRegistry):
         ievt = self.reger.tvts.get(keys=dgKey(pre=vci, dig=vcser))
         iserder = SerderKERI(raw=ievt.encode("utf-8"))
 
+        regser = self.regser
+        vserder = self.versionSerder
         if self.noBackers:
-            serder = revokeEvent(vcdig=vci, regk=self.regk, dig=iserder.said, dt=dt)
+            serder = revokeEvent(vcdig=vci, regk=self.regk, dig=iserder.said, dt=dt,
+                                 version=vserder.pvrsn, kind=vserder.kind)
         else:
             serder = backerRevoke(vcdig=vci,
                                   regk=self.regk,
                                   regsn=self.regi,
-                                  regd=self.regser.said,
-                                  dig=iserder.said, dt=dt)
+                                  regd=regser.said,
+                                  dig=iserder.said, dt=dt,
+                                  version=vserder.pvrsn,
+                                  kind=vserder.kind)
 
         self.processEvent(serder=serder)
         return serder
@@ -419,6 +444,7 @@ class SignifyRegistry(BaseRegistry):
             regser (SerderKERI): Regsitry inception event
         """
         pre = self.hab.pre
+        self.vcp = regser
         self.regk = regser.pre
         self.regd = regser.said
         self.registries.add(self.regk)
@@ -460,11 +486,16 @@ class SignifyRegistry(BaseRegistry):
         Returns:
             SerderKERI: The SerderKERI of the credential issuance event
         """
+        regser = self.regser
+        vserder = self.versionSerder
         if self.noBackers:
-            serder = issueEvent(vcdig=said, regk=self.regk, dt=dt)
+            serder = issueEvent(vcdig=said, regk=self.regk, dt=dt,
+                                version=vserder.pvrsn, kind=vserder.kind)
         else:
-            serder = backerIssue(vcdig=said, regk=self.regk, regsn=self.regi, regd=self.regser.said,
-                                          dt=dt)
+            serder = backerIssue(vcdig=said, regk=self.regk, regsn=self.regi, regd=regser.said,
+                                          dt=dt,
+                                          version=vserder.pvrsn,
+                                          kind=vserder.kind)
 
         self.processEvent(serder=serder)
         return serder
@@ -489,11 +520,16 @@ class SignifyRegistry(BaseRegistry):
         ievt = self.reger.tvts.get(keys=dgKey(pre=vci, dig=vcser))
         iserder = SerderACDC(raw=ievt.encode("utf-8"))
 
+        regser = self.regser
+        vserder = self.versionSerder
         if self.noBackers:
-            serder = revokeEvent(vcdig=vci, regk=self.regk, dig=iserder.said, dt=dt)
+            serder = revokeEvent(vcdig=vci, regk=self.regk, dig=iserder.said, dt=dt,
+                                 version=vserder.pvrsn, kind=vserder.kind)
         else:
-            serder = backerRevoke(vcdig=vci, regk=self.regk, regsn=self.regi, regd=self.regser.said,
-                                  dig=iserder.said, dt=dt)
+            serder = backerRevoke(vcdig=vci, regk=self.regk, regsn=self.regi, regd=regser.said,
+                                  dig=iserder.said, dt=dt,
+                                  version=vserder.pvrsn,
+                                  kind=vserder.kind)
 
         self.processEvent(serder=serder)
         return serder
@@ -672,7 +708,7 @@ class Registrar(doing.DoDoer):
         Returns:
             (bytearray, Prefixer, Seqner, Saider): tuple of ixn event, Hab pre, and seq. no. and SAID of the ixn event.
         """
-        ixn = hab.interact(data=[rseal])
+        ixn = hab.interact(data=[rseal], framed=True)
         serder = SerderKERI(raw=bytes(ixn))
 
         sn = serder.sn
@@ -869,6 +905,7 @@ class Credentialer(doing.DoDoer):
             raise ConfigurationError("Credential registry {} does not exist.  It must be created before issuing "
                                             "credentials".format(regname))
 
+        vserder = registry.versionSerder
         creder = credential(issuer=registry.hab.pre,
                             schema=schema,
                             recipient=recp,
@@ -878,7 +915,9 @@ class Credentialer(doing.DoDoer):
                             private_credential_nonce=private_credential_nonce,
                             private_subject_nonce=private_subject_nonce,
                             rules=rules,
-                            status=registry.regk)
+                            status=registry.regk,
+                            version=vserder.pvrsn,
+                            kind=vserder.kind)
         self.validate(creder)
         return creder
 
@@ -1023,7 +1062,7 @@ def sendArtifacts(hby, reger, postman, creder, recp):
         creder (Creder): the credential to pull artifacts for and send
         recp (str): qb64 prefix of the recipient to send the artifacts to
     """
-    issr = creder.issuer
+    issr = creder.israid
     isse = creder.attrib["i"] if "i" in creder.attrib else None
     regk = creder.regid
 
@@ -1073,7 +1112,7 @@ def sendRegistry(hby, reger, postman, creder, sender, recp):
         sender (str): qb64 prefix of the sender of the registry artifacts
         recp (str): qb64 prefix of the recipient to send the artifacts to
     """
-    issr = creder.issuer
+    issr = creder.israid
     regk = creder.regid
 
     if regk is None:

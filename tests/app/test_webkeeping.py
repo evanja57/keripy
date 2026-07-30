@@ -7,7 +7,7 @@ import asyncio
 
 import pytest
 
-from keri.app.keeping import Manager
+from keri.app.basekeeping import Manager
 from keri.app.webkeeping import WebKeeper
 from keri.core import Salter
 
