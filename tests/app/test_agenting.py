@@ -436,7 +436,7 @@ def test_witness_inquisitor(mockHelpingNowUTC, seeder, witnessPorter):
         doist.exit()
 
 
-def test_witness_inquisitor_v2(mockHelpingNowUTC, seeder):
+def test_witness_inquisitor_v2(mockHelpingNowUTC, seeder, witnessPorter):
 
 
     with openHby(name="wan3", salt=Salter(raw=b'wann-the-witness').qb64, version=Vrsn_2_0) as wanHby, \
@@ -457,16 +457,27 @@ def test_witness_inquisitor_v2(mockHelpingNowUTC, seeder):
         for hby in (wanHby, wilHby, wesHby):
             hby.cf.put(cf)
 
-        wanDoers = setupWitness(alias="wan", hby=wanHby, tcpPort=5632, httpPort=5642, version=Vrsn_2_0, kind=Kinds.json)
-        wilDoers = setupWitness(alias="wil", hby=wilHby, tcpPort=5633, httpPort=5643, version=Vrsn_2_0, kind=Kinds.json)
-        wesDoers = setupWitness(alias="wes", hby=wesHby, tcpPort=5634, httpPort=5644, version=Vrsn_2_0, kind=Kinds.json)
+        witnessPorts, witnessUrls = witnessPorter("wan", "wil", "wes")
+        wanDoers = setupWitness(alias="wan", hby=wanHby,
+                                tcpPort=witnessPorts["wan"]["tcp"],
+                                httpPort=witnessPorts["wan"]["http"], version=Vrsn_2_0, kind=Kinds.json)
+        wilDoers = setupWitness(alias="wil", hby=wilHby,
+                                tcpPort=witnessPorts["wil"]["tcp"],
+                                httpPort=witnessPorts["wil"]["http"], version=Vrsn_2_0, kind=Kinds.json)
+        wesDoers = setupWitness(alias="wes", hby=wesHby,
+                                tcpPort=witnessPorts["wes"]["tcp"],
+                                httpPort=witnessPorts["wes"]["http"], version=Vrsn_2_0, kind=Kinds.json)
 
         wanHab = wanHby.habByName(name="wan")
         wilHab = wilHby.habByName(name="wil")
         wesHab = wesHby.habByName(name="wes")
 
-        seeder.seedWitEnds(palHby.db, witHabs=[wanHab, wilHab, wesHab], protocols=[Schemes.tcp], version=Vrsn_2_0, kind=Kinds.json)
-        seeder.seedWitEnds(qinHby.db, witHabs=[wanHab, wilHab, wesHab], protocols=[Schemes.tcp], version=Vrsn_2_0, kind=Kinds.json)
+        seeder.seedWitEnds(palHby.db, witHabs=[wanHab, wilHab, wesHab],
+                           protocols=[Schemes.tcp], witnessUrls=witnessUrls,
+                           version=Vrsn_2_0, kind=Kinds.json)
+        seeder.seedWitEnds(qinHby.db, witHabs=[wanHab, wilHab, wesHab],
+                           protocols=[Schemes.tcp], witnessUrls=witnessUrls,
+                           version=Vrsn_2_0, kind=Kinds.json)
 
         palHab = palHby.makeHab(name="pal", wits=[wanHab.pre, wilHab.pre, wesHab.pre], transferable=True, version=Vrsn_2_0, kind=Kinds.json)
         qinHab = qinHby.makeHab(name="qin", wits=[wanHab.pre, wilHab.pre, wesHab.pre], transferable=True, version=Vrsn_2_0, kind=Kinds.json)
