@@ -15,7 +15,7 @@ from prettytable import PrettyTable
 from ...common import Parsery, setupHby, printIdentifier, parseVersion
 
 from ....kering import (TraitCodex, ConfigurationError,
-                        Kinds, MissingAnchorError, Version)
+                        Kinds, MissingAnchorError, Version, Vrsn_1_0)
 from ....app import (HaberyDoer, MailboxDirector, WitnessInquisitor,
                      Notifier, Multiplexor, Counselor, Organizer, Poster,
                      multisigInceptExn, multisigInteractExn, multisigRotateExn,
@@ -98,6 +98,7 @@ class JoinDoer(doing.DoDoer):
                           **parser_kwa)
 
         mux = Multiplexor(hby=self.hby, notifier=self.notifier)
+        self.mux = mux
         loadHandlers(exc=self.exc, mux=mux)
         self.counselor = Counselor(hby=self.hby, version=self.version, kind=Kinds.json)
 
@@ -124,7 +125,8 @@ class JoinDoer(doing.DoDoer):
                 Tymist instance. Calling tymth() returns associated Tymist .tyme.
             tock (float): injected initial tock value
 
-        Returns:  doifiable Doist compatible generator method
+        Returns:
+            doifiable Doist compatible generator method
         """
         # enter context
         self.wind(tymth)
@@ -240,14 +242,22 @@ class JoinDoer(doing.DoDoer):
             except ValueError as e:
                 return False
 
-            icp = ghab.msgOwnInception(allowPartiallySigned=True)
+            icp = ghab.msgOwnInception(allowPartiallySigned=True,
+                                       gvrsn=self.version if self.version is not None else Version)
 
             exn, ims = multisigInceptExn(ghab.mhab,
                                          smids=ghab.smids,
                                          rmids=ghab.rmids,
                                          icp=icp,
-                                         version=self.version if self.version is not None else Version,
+                                         version=Vrsn_1_0,
                                          kind=oicp.kind)
+            local = Parser(version=exn.pvrsn).parse(ims=bytearray(exn.raw + ims),
+                                                    framed=True,
+                                                    processive=False)[0]
+            self.mux.exc.logEvent(serder=local.serder, pathed=local.ptds,
+                                  tsgs=local.tsgs, cigars=local.cigars,
+                                  essrs=local.essrs)
+            self.mux.add(local.serder)
             others = list(oset(smids + (rmids or [])))
 
             others.remove(ghab.mhab.pre)
@@ -318,8 +328,15 @@ class JoinDoer(doing.DoDoer):
             ixn = ghab.msgOwnEvent(allowPartiallySigned=True, sn=oixn.sn, framed=True, gvrsn=event_version)
 
             exn, ims = multisigInteractExn(ghab, aids=ghab.smids, ixn=ixn,
-                                           version=self.version if self.version is not None else Version,
+                                           version=Vrsn_1_0,
                                            kind=oixn.kind)
+            local = Parser(version=exn.pvrsn).parse(ims=bytearray(exn.raw + ims),
+                                                    framed=True,
+                                                    processive=False)[0]
+            self.mux.exc.logEvent(serder=local.serder, pathed=local.ptds,
+                                  tsgs=local.tsgs, cigars=local.cigars,
+                                  essrs=local.essrs)
+            self.mux.add(local.serder)
             others = list(oset(smids + (rmids or [])))
 
             others.remove(ghab.mhab.pre)
@@ -452,8 +469,15 @@ class JoinDoer(doing.DoDoer):
                                          smids=ghab.smids,
                                          rmids=ghab.rmids,
                                          rot=rot,
-                                         version=self.version if self.version is not None else Version,
+                                         version=Vrsn_1_0,
                                          kind=orot.kind)
+            local = Parser(version=exn.pvrsn).parse(ims=bytearray(exn.raw + ims),
+                                                    framed=True,
+                                                    processive=False)[0]
+            self.mux.exc.logEvent(serder=local.serder, pathed=local.ptds,
+                                  tsgs=local.tsgs, cigars=local.cigars,
+                                  essrs=local.essrs)
+            self.mux.add(local.serder)
             others = list(oset(smids + (rmids or [])))
 
             others.remove(ghab.mhab.pre)
@@ -549,8 +573,8 @@ class JoinDoer(doing.DoDoer):
             attrs (dict): attributes of the reply message
 
         Returns:
-
-        """
+            bool: True when the reply is approved and processed, otherwise False
+            """
         said = attrs["d"]
         exn, pathed = cloneMessage(self.hby, said=said)
 
@@ -607,7 +631,7 @@ class JoinDoer(doing.DoDoer):
 
             for recp in smids:  # this goes to other participants only as a signaling mechanism
                 exn, atc = multisigRpyExn(ghab=hab, rpy=anc,
-                                          version=self.version if self.version is not None else Version,
+                                          version=Vrsn_1_0,
                                           kind=rserder.kind)
                 self.postman.send(src=hab.mhab.pre,
                                   dest=recp,
@@ -632,8 +656,9 @@ class JoinDoer(doing.DoDoer):
             attrs (dict): attributes of the reply message
 
         Returns:
-
-        """
+            bool: True when the registry creation is approved and processed,
+                otherwise False
+            """
         said = attrs["d"]
         exn, pathed = cloneMessage(self.hby, said=said)
 
@@ -690,7 +715,7 @@ class JoinDoer(doing.DoDoer):
                     vcp=vserder.raw,
                     anc=anc,
                     usage=usage,
-                    version=self.version if self.version is not None else Version,
+                    version=Vrsn_1_0,
                     kind=vserder.kind,
                 )
                 self.postman.send(src=hab.mhab.pre,
@@ -716,8 +741,9 @@ class JoinDoer(doing.DoDoer):
             attrs (dict): attributes of the reply message
 
         Returns:
-
-        """
+            bool: True when the credential issuance is approved and processed,
+                otherwise False
+            """
         said = attrs["d"]
         exn, pathed = cloneMessage(self.hby, said=said)
 
@@ -800,7 +826,7 @@ class JoinDoer(doing.DoDoer):
                     acdc=acdc,
                     iss=iserder.raw,
                     anc=anc,
-                    version=self.version if self.version is not None else Version,
+                    version=Vrsn_1_0,
                     kind=iserder.kind,
                 )
                 self.postman.send(src=hab.mhab.pre,
@@ -826,8 +852,9 @@ class JoinDoer(doing.DoDoer):
             attrs (dict): attributes of the reply message
 
         Returns:
-
-        """
+            bool | None: True when the revocation is approved and processed,
+                False when declined, or None when the credential SAID is invalid
+            """
         said = attrs["d"]
         exn, pathed = cloneMessage(self.hby, said=said)
 
@@ -903,7 +930,7 @@ class JoinDoer(doing.DoDoer):
                     said=creder.said,
                     rev=rserder.raw,
                     anc=anc,
-                    version=self.version if self.version is not None else Version,
+                    version=Vrsn_1_0,
                     kind=rserder.kind,
                 )
                 self.postman.send(src=hab.mhab.pre,

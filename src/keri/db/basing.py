@@ -570,6 +570,11 @@ class Baser(LMDBer):
             subkey 'epath.'
             Multiple values per key.
 
+        .enst is named subDB instance of IoSetSuber for exchange message
+            nested child substreams.
+            subkey 'enst.'
+            Multiple values per key.
+
         .essrs is named subDB instance of CesrIoSetSuber (klas=Texter) for
             exchange message event source records.
             subkey 'essrs.'
@@ -1090,6 +1095,9 @@ class Baser(LMDBer):
         # TODO: clean
         self.epath = subing.IoSetSuber(db=self, subkey="epath.")
 
+        # exchange nested child substreams
+        self.enst = subing.IoSetSuber(db=self, subkey="enst.")
+
         self.essrs = subing.CesrIoSetSuber(db=self, subkey="essrs.", klas=coring.Texter)
 
         # accepted signed 12-word challenge response exn messages keys by prefix of signer
@@ -1568,7 +1576,7 @@ class Baser(LMDBer):
                 # This is the list of set based databases that are not created as part of event processing.
                 # for now we are just copying them from self to copy without worrying about being able to
                 # reprocess them.  We need a more secure method in the future
-                sets = ["esigs", "ecigs", "epath", "chas", "reps", "wkas", "meids", "maids"]
+                sets = ["esigs", "ecigs", "epath", "enst", "chas", "reps", "wkas", "meids", "maids"]
                 for name in sets:
                     srcdb = getattr(self, name)
                     cpydb = getattr(copy, name)
@@ -1897,23 +1905,24 @@ class Baser(LMDBer):
         #return msg
 
 
-    def cloneDelegation(self, kever, gvrsn=None, *, version=None):
+    def cloneDelegation(self, kever, gvrsn=Version, *, version=None):
         """
         Recursively clone delegation chain from AID of Kever if one exists.
 
         Parameters:
             kever (Kever): Kever from which to clone the delegator's AID.
-            gvrsn (Versionage | None): CESR genus version for attachments.
-                None means derive from ``kever.serder.gvrsn`` or
-                ``kever.serder.pvrsn`` so V1 KELs are not rebuilt with the
-                global V2 default.
+            gvrsn (Versionage): CESR genus version for attachments. Default
+                ``Version`` means library-default attachment framing even when
+                cloning bodies with a different pvrsn. Pass ``Vrsn_1_0`` only
+                when the peer requires that attachment genus.
+                Present-but-``None`` is treated as ``Version``.
             version (Versionage): legacy alias for gvrsn
 
         """
         if version is not None:
             gvrsn = version
         if gvrsn is None:
-            gvrsn = kever.serder.gvrsn or kever.serder.pvrsn
+            gvrsn = Version
         if kever.delegated and kever.delpre in self.kevers:
             dkever = self.kevers[kever.delpre]
             yield from self.cloneDelegation(dkever, gvrsn=gvrsn)

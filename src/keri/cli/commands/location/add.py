@@ -13,7 +13,7 @@ from hio.help import ogler
 
 from ...common import Parsery, setupHby, parseVersion
 
-from .... import ConfigurationError, Kinds, Version
+from .... import ConfigurationError, Kinds, Version, Vrsn_1_0
 
 from ....app import (GroupHab, Multiplexor, indirecting,
                      forwarding, WitnessPublisher, Notifier,
@@ -90,7 +90,8 @@ class LocationDoer(doing.DoDoer):
                 Tymist instance. Calling tymth() returns associated Tymist .tyme.
             tock (float): injected initial tock value
 
-        Returns:  doifiable Doist compatible generator method
+        Returns:
+            doifiable Doist compatible generator method
 
         """
         # enter context
@@ -112,7 +113,7 @@ class LocationDoer(doing.DoDoer):
 
             for recp in smids:  # this goes to other participants only as a signaling mechanism
                 exn, atc = multisigRpyExn(ghab=self.hab, rpy=msg,
-                                          version=self.version, kind=Kinds.json)
+                                          version=Vrsn_1_0, kind=Kinds.json)
                 self.postman.send(src=self.hab.mhab.pre,
                                   dest=recp,
                                   topic="multisig",

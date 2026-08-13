@@ -102,7 +102,8 @@ class JoinDoer(doing.DoDoer):
                 Tymist instance. Calling tymth() returns associated Tymist .tyme.
             tock (float): injected initial tock value
 
-        Returns:  doifiable Doist compatible generator method
+        Returns:
+            doifiable Doist compatible generator method
         """
         # enter context
         self.wind(tymth)
@@ -149,8 +150,9 @@ class JoinDoer(doing.DoDoer):
             pathed (dict): pathed attachments dict
 
         Returns:
-
-        """
+            bool: True when the IPEX message is approved and processed,
+                otherwise False
+            """
         embeds = exn.ked['e']
         sender = exn.ked['i']
 
@@ -213,7 +215,7 @@ class JoinDoer(doing.DoDoer):
             smids.remove(hab.mhab.pre)
 
             for smid in smids:  # this goes to other participants only as a signaling mechanism
-                rexn, atc = multisigExn(ghab=hab, exn=msg)
+                rexn, atc = multisigExn(ghab=hab, exn=msg, version=Vrsn_1_0)
                 self.postman.send(src=hab.mhab.pre,
                                   dest=smid,
                                   topic="multisig",
