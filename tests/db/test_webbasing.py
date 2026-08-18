@@ -6,9 +6,11 @@ tests.db.test_webbasing module
 
 import asyncio
 import json
+from types import SimpleNamespace
 
 import pytest
 
+from keri import __version__
 from keri.db.webbasing import WebBaser, WebBaserDoer, _strip_prerelease
 
 try:
@@ -29,7 +31,8 @@ except ImportError:
     # Pyodide fallback
     from keri.core import serdering
 
-from keri.kering import Vrsn_1_0
+from keri.kering import (ConfigurationError, DatabaseError, Version,
+                         Vrsn_1_0)
 from keri.core import state as eventState
 from keri.app import openHby
 from keri.help import datify, dictify
@@ -59,6 +62,14 @@ class FakeStorageHandle:
         self._local.clear()
 
     async def sync(self):
+        gate = self.backend.syncGates.pop(self.namespace, None)
+        if gate is not None:
+            entered, release = gate
+            entered.set()
+            await release.wait()
+        if self.backend.failures.get(self.namespace, 0):
+            self.backend.failures[self.namespace] -= 1
+            raise RuntimeError(f"failed to sync {self.namespace}")
         self.backend.persisted[self.namespace] = dict(self._local)
 
 
@@ -67,6 +78,8 @@ class FakeStorageBackend:
 
     def __init__(self):
         self.persisted = {}
+        self.failures = {}
+        self.syncGates = {}
 
     async def open(self, namespace):
         return FakeStorageHandle(self, namespace)
@@ -83,6 +96,9 @@ def test_webdb_baser():
 
         assert baser.opened
         assert baser.name == "main"
+        assert baser.env.owner is baser
+        assert not hasattr(baser, "db")
+        assert baser._kevers.db is baser
 
         assert isinstance(baser.evts, subing.SerderSuber)
         assert isinstance(baser.sigs, subing.CesrIoSetSuber)
@@ -101,6 +117,7 @@ def test_webdb_baser():
         assert isinstance(baser.names, subing.Suber)
         assert isinstance(baser.imgs, subing.CatCesrSuber)
         assert isinstance(baser.iimgs, subing.CatCesrSuber)
+        assert baser.oobis.db is baser
 
         await baser.aclose(clear=True)
         assert not baser.opened
@@ -220,6 +237,7 @@ def test_webdb_baser():
         assert isinstance(baser.qnfs, subing.IoSetSuber)
         assert isinstance(baser.delegables, subing.IoSetSuber)
         assert isinstance(baser.epath, subing.IoSetSuber)
+        assert isinstance(baser.enst, subing.IoSetSuber)
         assert isinstance(baser.kramPTDS, subing.IoSetSuber)
 
         # Komers
@@ -270,17 +288,18 @@ def test_webdb_baser():
 
         # Basic tests for all SerderSuber instances
         serderSubers = [
-            baser.evts,
-            baser.rpys,
-            baser.epse,
-            baser.exns,
-            baser.dpwe,
-            baser.dune,
-            baser.dpub,
-            baser.kramPMKM,
+            "evts",
+            "rpys",
+            "epse",
+            "exns",
+            "dpwe",
+            "dune",
+            "dpub",
+            "kramPMKM",
         ]
 
-        for sub in serderSubers:
+        for name in serderSubers:
+            sub = getattr(baser, name)
             assert isinstance(sub, subing.SerderSuber)
 
             # empty db
@@ -320,6 +339,7 @@ def test_webdb_baser():
 
             # persistence
             await baser.reopen(storageOpener=backend.open)
+            sub = getattr(baser, name)
             assert sub.get(keys=(preb, digb)) is None
             assert sub.get(keys=(pre2, dig2)) is not None
 
@@ -499,13 +519,15 @@ def test_webdb_baser():
 
         # Basic tests for IoSetSuber instances
         ioSetSubers = [
-            baser.qnfs,
-            baser.delegables,
-            baser.epath,
-            baser.kramPTDS,
+            "qnfs",
+            "delegables",
+            "epath",
+            "enst",
+            "kramPTDS",
         ]
 
-        for sub in ioSetSubers:
+        for name in ioSetSubers:
+            sub = getattr(baser, name)
             assert isinstance(sub, subing.IoSetSuber)
 
             # Basic insertion behavior
@@ -596,7 +618,9 @@ def test_webdb_baser():
             # Persistence across reopen
             assert sub.put(keys=b'C', vals=[b'1', b'2']) is True
             await baser.reopen(storageOpener=backend.open)
+            sub = getattr(baser, name)
             assert sub.get(keys=b'C') == ['1', '2']
+            assert sub.rem(keys=b'C') is True
 
         # -------- CesrIoSetSuber Subdbs tests ---------
 
@@ -709,11 +733,13 @@ def test_webdb_baser():
             assert sub.rem(keys=key) is True
             assert sub.get(keys=key) == []
 
-            # Non-Persistence across reopen
+            # Persistence across reopen
             assert sub.put(keys=key, vals=[siger0, siger1]) is True
             await baser.reopen(storageOpener=backend.open)
             sub = getattr(baser, name)
-            assert sub.get(keys=key) == []
+            assert [s.qb64b for s in sub.get(keys=key)] == [siger0.qb64b,
+                                                            siger1.qb64b]
+            assert sub.rem(keys=key) is True
 
             # getFullItemIter consistency
             assert sub.put(keys=key, vals=[siger0, siger1]) is True
@@ -843,9 +869,9 @@ def test_webdb_baser():
             await baser.reopen(storageOpener=backend.open)
             sub = getattr(baser, name)
 
-            # WebBaser clears CesrIoSetSuber on reopen
-            assert sub.get(keys=key) == []
-            assert sub.cnt(keys=key) == 0
+            assert [w.qb64b for w in sub.get(keys=key)] == [witA.qb64b,
+                                                            witB.qb64b]
+            assert sub.rem(keys=key) is True
 
 
         # Tests for CesrIoSetSuber where klas=Diger
@@ -965,9 +991,9 @@ def test_webdb_baser():
             await baser.reopen(storageOpener=backend.open)
             sub = getattr(baser, name)
 
-            # WebBaser clears CesrIoSetSuber on reopen
-            assert sub.get(keys=key) == []
-            assert sub.cnt(keys=key) == 0
+            assert [d.qb64b for d in sub.get(keys=key)] == [diger0.qb64b,
+                                                            diger1.qb64b]
+            assert sub.rem(keys=key) is True
 
 
         # Test .essrs (CesrIoSetSuber of Texter)
@@ -1080,8 +1106,9 @@ def test_webdb_baser():
         assert baser.essrs.put(keys=key, vals=[texter0, texter1]) is True
         await baser.reopen(storageOpener=backend.open)
 
-        assert baser.essrs.get(keys=key) == []
-        assert baser.essrs.cnt(keys=key) == 0
+        assert [t.qb64b for t in baser.essrs.get(keys=key)] == [texter0.qb64b,
+                                                               texter1.qb64b]
+        assert baser.essrs.rem(keys=key) is True
 
 
         # -------- CesrSuber Subdbs tests ---------
@@ -1196,8 +1223,8 @@ def test_webdb_baser():
             await baser.reopen(storageOpener=backend.open)
             sub = getattr(baser, name)
 
-            # WebBaser clears CesrSuber on reopen
-            assert sub.get(keys=key) is None
+            assert sub.get(keys=key).qb64b == dater0.qb64b
+            assert sub.rem(keys=key) is True
 
 
         # Test for CesrSuber where klas=Diger
@@ -1312,8 +1339,8 @@ def test_webdb_baser():
             await baser.reopen(storageOpener=backend.open)
             sub = getattr(baser, name)
 
-            # WebBaser clears CesrSuber on reopen
-            assert sub.get(keys=key) is None
+            assert sub.get(keys=key).qb64b == diger0.qb64b
+            assert sub.rem(keys=key) is True
 
         # Tests for .erpy subdb
 
@@ -1416,10 +1443,8 @@ def test_webdb_baser():
         # Persistence across reopen
         assert baser.erpy.put(keys=key, val=saider0) is True
         await baser.reopen(storageOpener=backend.open)
-        baser.erpy = getattr(baser, name)
-
-        # WebBaser clears Cesrbaser.erpyer on reopen
-        assert baser.erpy.get(keys=key) is None
+        assert baser.erpy.get(keys=key).qb64b == saider0.qb64b
+        assert baser.erpy.rem(keys=key) is True
 
 
         # Test for CesrSuber where klas=Cigar
@@ -1528,8 +1553,8 @@ def test_webdb_baser():
             await baser.reopen(storageOpener=backend.open)
             sub = getattr(baser, name)
 
-            # WebBaser clears CesrSuber on reopen
-            assert sub.get(keys=key) is None
+            assert sub.get(keys=key).qb64b == cigar0.qb64b
+            assert sub.rem(keys=key) is True
 
 
         # ---- EventSourceRecord tests ----
@@ -1583,7 +1608,8 @@ def test_webdb_baser():
         # reopen
         await baser.reopen(storageOpener=backend.open)
         restored = baser.esrs.get(key)
-        assert restored == None
+        assert restored == record
+        assert baser.esrs.rem(key) is True
 
 
         # test first seen event log .fels sub db
@@ -1754,10 +1780,10 @@ def test_webdb_baser():
         await baser.reopen(storageOpener=backend.open)
         # After reopen, dtss should still be empty for key but not key2
         assert baser.dtss.get(keys=key) is None
-        assert baser.dtss.get(keys=key2) is None
+        assert baser.dtss.get(keys=key2).dts == d3.dts
 
         # Check second key
-        assert baser.dtss.rem(keys=key2) is False
+        assert baser.dtss.rem(keys=key2) is True
         assert baser.dtss.get(keys=key2) is None
 
 
@@ -3617,6 +3643,253 @@ def test_statedict():
 
 
 @needskeri
+def test_webbaser_ownership_reopen_and_versions():
+    """Test direct backend ownership, dirty reopen, and version gates."""
+    async def _go():
+        backend = FakeStorageBackend()
+        baser = WebBaser(name="ownership")
+
+        await baser.reopen(storageOpener=backend.open)
+        assert baser.version == __version__
+        assert baser.current
+        assert baser.env.owner is baser
+        assert baser.oobis.db is baser
+        assert baser._kevers.db is baser
+        assert not hasattr(baser, "db")
+        assert all(hasattr(baser, name) for name in
+                   ("env", "_stores", "stores", "_version"))
+
+        old = baser.oobis
+        record = OobiRecord(cid="dirty")
+        assert old.put(keys=("dirty",), val=record)
+        await baser.reopen(storageOpener=backend.open)
+        assert baser.oobis is not old
+        assert baser.oobis.db is baser
+        assert baser.oobis.get(keys=("dirty",)) == record
+
+        meta = baser._stores["__meta__"]
+        meta.items.clear()
+        meta.dirty = True
+        baser._version = None
+        await baser.aclose()
+        with pytest.raises(DatabaseError, match="DB version None"):
+            await baser.reopen(storageOpener=backend.open)
+        assert baser.opened
+        assert baser.version is None
+        assert baser.oobis.get(keys=("dirty",)) == record
+
+        baser.version = __version__
+        await baser.aclose()
+        await baser.reopen(storageOpener=backend.open)
+
+        baser.version = "0.0.1"
+        await baser.aclose()
+        with pytest.raises(DatabaseError, match="migrations must be run"):
+            await baser.reopen(storageOpener=backend.open)
+        assert baser.opened
+        assert baser.version == "0.0.1"
+
+        baser.version = __version__
+        await baser.aclose()
+        await baser.reopen(storageOpener=backend.open)
+        assert baser.current
+
+        baser.version = "999.0.0"
+        await baser.aclose()
+        with pytest.raises(ConfigurationError, match="ahead of library"):
+            await baser.reopen(storageOpener=backend.open)
+        assert baser.opened
+        assert baser.version == "999.0.0"
+
+        baser.version = __version__
+        await baser.aclose(clear=True)
+
+    asyncio.run(_go())
+
+
+@needskeri
+def test_webbaser_aclose_retry():
+    """Test that a failed flush leaves direct state available for retry."""
+    async def _go():
+        backend = FakeStorageBackend()
+        baser = WebBaser(name="retry")
+
+        await baser.reopen(storageOpener=backend.open)
+        record = OobiRecord(cid="retry")
+        assert baser.oobis.put(keys=("retry",), val=record)
+        backend.failures["retry:oobis."] = 1
+
+        with pytest.raises(RuntimeError, match="failed to sync retry:oobis"):
+            await baser.aclose()
+        assert baser.opened
+        assert baser.env.owner is baser
+        assert baser.oobis.get(keys=("retry",)) == record
+
+        await baser.aclose()
+        await baser.reopen(storageOpener=backend.open)
+        assert baser.oobis.get(keys=("retry",)) == record
+        await baser.aclose(clear=True)
+
+    asyncio.run(_go())
+
+
+@needskeri
+def test_webbaser_scheduled_close_cancellation():
+    """Test that cancellation before or during close leaves state retryable."""
+    async def _go():
+        backend = FakeStorageBackend()
+        baser = WebBaser(name="cancel-close")
+        await baser.reopen(storageOpener=backend.open)
+
+        record = OobiRecord(cid="cancelled")
+        assert baser.oobis.put(keys=("cancelled",), val=record)
+        baser.close()
+        baser._closeTask.cancel()
+
+        with pytest.raises(asyncio.CancelledError):
+            await baser.reopen(storageOpener=backend.open)
+        assert baser.opened
+        assert baser._closeTask is None
+        assert baser.oobis.get(keys=("cancelled",)) == record
+
+        await baser.reopen(storageOpener=backend.open)
+        assert baser.oobis.get(keys=("cancelled",)) == record
+        await baser.aclose(clear=True)
+
+        backend = FakeStorageBackend()
+        baser = WebBaser(name="cancel-during-close")
+        await baser.reopen(storageOpener=backend.open)
+
+        record = OobiRecord(cid="cancelled-during")
+        assert baser.oobis.put(keys=("cancelled-during",), val=record)
+        entered = asyncio.Event()
+        release = asyncio.Event()
+        backend.syncGates["cancel-during-close:oobis."] = (entered, release)
+        baser.close()
+        task = baser._closeTask
+        await entered.wait()
+        task.cancel()
+
+        with pytest.raises(asyncio.CancelledError):
+            await baser.reopen(storageOpener=backend.open)
+        assert baser.opened
+        assert baser._closeTask is None
+        assert baser.oobis.get(keys=("cancelled-during",)) == record
+
+        await baser.reopen(storageOpener=backend.open)
+        assert baser.oobis.get(keys=("cancelled-during",)) == record
+        await baser.aclose(clear=True)
+
+    asyncio.run(_go())
+
+
+@needskeri
+def test_webbaser_clear_during_scheduled_close():
+    """Test that clear requests strengthen an active scheduled close."""
+    async def _go():
+        backend = FakeStorageBackend()
+        baser = WebBaser(name="clear-during-aclose")
+        await baser.reopen(storageOpener=backend.open)
+
+        record = OobiRecord(cid="clear-during-aclose")
+        assert baser.oobis.put(keys=("clear-during-aclose",), val=record)
+        entered = asyncio.Event()
+        release = asyncio.Event()
+        backend.syncGates["clear-during-aclose:oobis."] = (entered, release)
+        baser.close(clear=False)
+        await entered.wait()
+        closer = asyncio.create_task(baser.aclose(clear=True))
+        await asyncio.sleep(0)
+        release.set()
+        await closer
+
+        await baser.reopen(storageOpener=backend.open)
+        assert baser.oobis.get(keys=("clear-during-aclose",)) is None
+        await baser.aclose(clear=True)
+
+        backend = FakeStorageBackend()
+        baser = WebBaser(name="clear-during-close")
+        await baser.reopen(storageOpener=backend.open)
+
+        record = OobiRecord(cid="clear-during-close")
+        assert baser.oobis.put(keys=("clear-during-close",), val=record)
+        entered = asyncio.Event()
+        release = asyncio.Event()
+        backend.syncGates["clear-during-close:oobis."] = (entered, release)
+        baser.close(clear=False)
+        await entered.wait()
+        baser.close(clear=True)
+        release.set()
+        await baser.aclose()
+
+        await baser.reopen(storageOpener=backend.open)
+        assert baser.oobis.get(keys=("clear-during-close",)) is None
+        await baser.aclose(clear=True)
+
+    asyncio.run(_go())
+
+
+@needskeri
+def test_webbaser_scheduled_close_failure():
+    """Test that a failed scheduled close is observed before a retry."""
+    async def _go():
+        backend = FakeStorageBackend()
+        baser = WebBaser(name="scheduled-failure")
+        await baser.reopen(storageOpener=backend.open)
+
+        record = OobiRecord(cid="scheduled-failure")
+        assert baser.oobis.put(keys=("scheduled-failure",), val=record)
+        backend.failures["scheduled-failure:oobis."] = 1
+        baser.close()
+        task = baser._closeTask
+        await asyncio.sleep(0)
+
+        assert task.done()
+        assert baser._closeTask is task
+        assert baser.opened
+        with pytest.raises(RuntimeError,
+                           match="failed to sync scheduled-failure:oobis"):
+            await baser.reopen(storageOpener=backend.open)
+        assert baser._closeTask is None
+        assert baser.opened
+        assert baser.oobis.get(keys=("scheduled-failure",)) == record
+
+        await baser.reopen(storageOpener=backend.open)
+        assert baser.oobis.get(keys=("scheduled-failure",)) == record
+        await baser.aclose(clear=True)
+
+    asyncio.run(_go())
+
+
+@needskeri
+def test_webbaser_empty_existing_version_gate():
+    """Test that persisted metadata does not make versionless storage fresh."""
+    async def _go():
+        backend = FakeStorageBackend()
+        baser = WebBaser(name="empty-existing")
+        await baser.reopen(storageOpener=backend.open)
+        await baser.flush()
+
+        meta = baser._stores["__meta__"]
+        meta.items.clear()
+        meta.dirty = True
+        baser._version = None
+        await baser.aclose()
+
+        with pytest.raises(DatabaseError, match="DB version None"):
+            await baser.reopen(storageOpener=backend.open)
+        assert baser.opened
+        assert baser.version is None
+
+        await baser.aclose(clear=True)
+        await baser.reopen(storageOpener=backend.open)
+        assert baser.current
+        await baser.aclose(clear=True)
+
+    asyncio.run(_go())
+
+
+@needskeri
 def test_close_clear_persistence():
     """Test close() and aclose() — both clear/preserve paths, temp flag, and
     post-close inoperability."""
@@ -3629,7 +3902,7 @@ def test_close_clear_persistence():
         baser.oobis.put(keys=("test_cid",), val=OobiRecord(cid="test_cid"))
         await baser.aclose(clear=False)
         assert not baser.opened
-        assert baser.db is None
+        assert baser._stores == {}
 
         await baser.reopen(storageOpener=backend.open)
         assert baser.oobis.get(keys=("test_cid",)) is not None
@@ -3647,49 +3920,55 @@ def test_close_clear_persistence():
         await baser.reopen(storageOpener=backend.open)
         assert baser.oobis.get(keys=("tmp",)) is None
 
-        # --- sync close() preserves data via fire-and-forget flush ---
+        # --- sync close() preserves data through its tracked async close ---
         baser.oobis.put(keys=("sync",), val=OobiRecord(cid="sync"))
         baser.close(clear=False)
         assert not baser.opened
-        assert baser.db is None
-        await asyncio.sleep(0)  # let fire-and-forget flush task run
-
         await baser.reopen(storageOpener=backend.open)
         assert baser.oobis.get(keys=("sync",)) is not None
 
-        # --- sync close(clear=True) wipes data ---
-        baser.close(clear=True)
-        await asyncio.sleep(0)
+        # --- awaiting aclose can escalate a scheduled preserve to clear ---
+        baser.oobis.put(keys=("escalate",), val=OobiRecord(cid="escalate"))
+        baser.close(clear=False)
+        await baser.aclose(clear=True)
+        await baser.reopen(storageOpener=backend.open)
+        assert baser.oobis.get(keys=("escalate",)) is None
 
+        # --- sync close(clear=True) wipes data ---
+        baser.oobis.put(keys=("sync",), val=OobiRecord(cid="sync"))
+        baser.close(clear=True)
         await baser.reopen(storageOpener=backend.open)
         assert baser.oobis.get(keys=("sync",)) is None
 
         # --- post-close: SubDb attributes are deleted, any access raises ---
         await baser.aclose()
-        assert baser.db is None
+        assert baser._stores == {}
         assert not baser.opened
         assert not hasattr(baser, 'oobis')
         with pytest.raises(AttributeError):
             baser.oobis.put(keys=("ghost",), val=OobiRecord(cid="ghost"))
 
-        # reopen restores the attributes
-        await baser.reopen(storageOpener=backend.open)
-        assert hasattr(baser, 'oobis')
+        # --- fully closed clear requests are no-ops ---
+        baser.close(clear=True)
+        assert not baser._clearPending
+        await baser.aclose(clear=True)
+        assert not baser._clearPending
 
-        # --- double-close is a no-op for both variants ---
-        baser.close()   # sync on already-closed — should not raise
-        await baser.aclose()  # async on already-closed — should not raise
+        # A later preserve-close must not inherit either clear request.
+        await baser.reopen(storageOpener=backend.open)
+        record = OobiRecord(cid="after-closed-clear")
+        assert baser.oobis.put(keys=("after-closed-clear",), val=record)
+        await baser.aclose()
+        await baser.reopen(storageOpener=backend.open)
+        assert baser.oobis.get(keys=("after-closed-clear",)) == record
+        await baser.aclose(clear=True)
 
     asyncio.run(_go())
 
 
 @needskeri
 def test_sync_close_no_event_loop():
-    """Test that sync close() works outside a running event loop (no-flush path).
-
-    When there is no running asyncio loop, close() should still drop state
-    without raising — it just can't schedule the flush task.
-    """
+    """Test that sync close() durably flushes outside a running event loop."""
     # Set up baser inside asyncio.run so reopen can await
     backend = FakeStorageBackend()
     baser = WebBaser()
@@ -3699,14 +3978,13 @@ def test_sync_close_no_event_loop():
     baser.oobis.put(keys=("nf",), val=OobiRecord(cid="nf"))
 
     # Now we're outside asyncio.run — no running event loop
-    baser.close(clear=False)  # should not raise despite no loop
+    baser.close(clear=False)
     assert not baser.opened
-    assert baser.db is None
+    assert baser._stores == {}
 
-    # Data was NOT flushed (no loop to run the task), but the in-memory
-    # state was dropped.  Reopen to confirm flush didn't happen — data
-    # may or may not be there depending on whether a prior flush persisted it.
-    # The key assertion is that close() itself didn't raise.
+    asyncio.run(baser.reopen(storageOpener=backend.open))
+    assert baser.oobis.get(keys=("nf",)) == OobiRecord(cid="nf")
+    asyncio.run(baser.aclose(clear=True))
 
 
 @needskeri
@@ -3796,6 +4074,9 @@ def test_clean_subdb_swap():
         baser.chas.add(keys=("challenge_pre",), val=test_diger)
         assert baser.chas.get(keys=("challenge_pre",))
 
+        nested = "nested-substream"
+        assert baser.enst.pin(keys=("exchange",), vals=[nested])
+
         # Write to a SubDb NOT in the unsecured/sets lists
         baser.names.put(keys=("", "myname"), val="somepre")
         assert baser.names.get(keys=("", "myname")) is not None
@@ -3810,10 +4091,49 @@ def test_clean_subdb_swap():
         assert chas_vals
         assert test_diger.qb64 in [v.qb64 for v in chas_vals]
 
+        assert baser.enst.get(keys=("exchange",)) == [nested]
+
         # names data should be gone (not copied to clone)
         assert baser.names.get(keys=("", "myname")) is None
 
         assert baser.opened
+
+    asyncio.run(_go())
+
+
+@needskeri
+def test_clean_current_version_habitat():
+    """Test that current-version habitat state survives clean and reopen."""
+    async def _go():
+        backend = FakeStorageBackend()
+        baser = WebBaser(name="clean-hab")
+        await baser.reopen(storageOpener=backend.open)
+
+        with openHby(name="clean-hab", base="test", temp=True, db=baser) as hby:
+            hab = hby.makeHab(name="alice", isith="1", icount=1)
+            pre = hab.pre
+            said = hab.kever.serder.said
+            assert hab.kever.serder.pvrsn == Version
+            assert baser.evts.get(keys=(pre, said)) is not None
+            assert baser.states.get(keys=pre) is not None
+            assert baser.habs.get(keys=pre) is not None
+
+            await baser.clean()
+            assert baser.evts.get(keys=(pre, said)) is not None
+            assert baser.states.get(keys=pre) is not None
+            assert baser.habs.get(keys=pre) is not None
+            assert pre in baser.kevers
+            assert baser.kevers[pre].db is baser
+
+            await baser.aclose()
+            await baser.reopen(storageOpener=backend.open)
+            assert baser.evts.get(keys=(pre, said)) is not None
+            assert baser.states.get(keys=pre) is not None
+            assert baser.habs.get(keys=pre) is not None
+            assert pre in baser.kevers
+            assert baser.kevers[pre].db is baser
+
+        await baser.aclose(clear=True)
 
     asyncio.run(_go())
 
@@ -3839,7 +4159,7 @@ def test_web_baser_doer():
         # exit() calls sync close() — baser is closed immediately
         doer.exit()
         assert not baser.opened
-        await asyncio.sleep(0)  # let fire-and-forget flush run
+        await baser.aclose()
 
         # exit() on already-closed baser should not raise
         doer.exit()  # close() is a no-op when not opened
@@ -3850,7 +4170,7 @@ def test_web_baser_doer():
         assert baser.opened
         doer.exit()
         assert not baser.opened
-        await asyncio.sleep(0)
+        await baser.aclose()
 
         # --- temp=True causes exit to clear data ---
         await baser.reopen(storageOpener=backend.open)
@@ -3861,7 +4181,7 @@ def test_web_baser_doer():
         doer2.enter()
         doer2.exit()
         assert not baser.opened
-        await asyncio.sleep(0)
+        await baser.aclose()
 
         # Reopen and verify data was cleared (temp=True -> clear=True)
         baser.temp = False
@@ -3965,5 +4285,38 @@ def test_webbaser_clone_all_pre_iter():
 
             for pre, sns in sn_by_pre.items():
                 assert sns == sorted(sns)
+
+    asyncio.run(_go())
+
+
+@needskeri
+def test_webbaser_clone_delegation_framing():
+    """Test native default and explicit V1 delegation attachment framing."""
+    async def _go():
+        backend = FakeStorageBackend()
+        baser = WebBaser(name="delegation")
+        await baser.reopen(storageOpener=backend.open)
+
+        with openHby(name="delegation", base="test", temp=True, db=baser) as hby:
+            delegator = hby.makeHab(name="delegator", isith="1", icount=1,
+                                    version=Vrsn_1_0, kind=Kinds.json)
+            delegate = SimpleNamespace(delegated=True, delpre=delegator.pre,
+                                       serder=delegator.kever.serder)
+
+            default = list(baser.cloneDelegation(delegate))
+            explicit_none = list(baser.cloneDelegation(delegate, gvrsn=None))
+            explicit_v1 = list(baser.cloneDelegation(delegate,
+                                                       gvrsn=Vrsn_1_0))
+            expected_default = list(baser.clonePreIter(pre=delegator.pre,
+                                                       gvrsn=Version))
+            expected_v1 = list(baser.clonePreIter(pre=delegator.pre,
+                                                  gvrsn=Vrsn_1_0))
+
+            assert default == expected_default
+            assert explicit_none == expected_default
+            assert explicit_v1 == expected_v1
+            assert default != explicit_v1
+
+        await baser.aclose(clear=True)
 
     asyncio.run(_go())
